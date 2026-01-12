@@ -34,7 +34,7 @@ val targetPlatformVersion = when (platformMajor) {
     243 -> "2024.3.5"
     251 -> "2025.1.5"
     252 -> "2025.2.4"
-    else -> "2025.3.1"  // 253+
+    else -> "2025.3"  // 253+
 }
 
 // ===== 兼容性代码目录配置 =====
@@ -115,10 +115,16 @@ dependencies {
     intellijPlatform {
         // 🔧 多版本构建支持：根据 platformMajor 选择对应的 SDK 版本
         // 2025.3+ 使用 intellijIdea()，之前版本使用 intellijIdeaCommunity()
+        // 🔧 useInstaller = false: 从 Maven 仓库下载多平台 ZIP 而不是从 CDN 下载 installer
+        //    这样可以避免 CDN 证书问题和 URL 格式问题
         if (platformMajor >= 253) {
-            intellijIdea(targetPlatformVersion)
+            intellijIdea(targetPlatformVersion) {
+                useInstaller.set(false)
+            }
         } else {
-            intellijIdeaCommunity(targetPlatformVersion)
+            intellijIdeaCommunity(targetPlatformVersion) {
+                useInstaller.set(false)
+            }
         }
 
         // 🔧 添加 Java 插件依赖 (编译时需要，运行时通过 plugin.xml optional="true" 可选)
@@ -253,7 +259,7 @@ intellijPlatform {
                 create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.1.5")  // 251
                 create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.2.4")  // 252
                 // 2025.3+ 使用统一的 IntellijIdea 类型
-                create(IntelliJPlatformType.IntellijIdea, "2025.3.1")           // 253
+                create(IntelliJPlatformType.IntellijIdea, "2025.3")           // 253
 
                 // ===== WebStorm =====
                 // 注意：WebStorm 版本号与 IDEA 不同，使用较保守的版本
@@ -261,7 +267,7 @@ intellijPlatform {
                 create(IntelliJPlatformType.WebStorm, "2024.3.3")
                 create(IntelliJPlatformType.WebStorm, "2025.1.2")
                 create(IntelliJPlatformType.WebStorm, "2025.2.1")
-                create(IntelliJPlatformType.WebStorm, "2025.3.1")
+                create(IntelliJPlatformType.WebStorm, "2025.3")
 
                 // ===== GoLand =====
                 // GoLand 的版本号与 IDEA 不同，例如 2024.2 最新是 2024.2.3
@@ -269,28 +275,28 @@ intellijPlatform {
                 create(IntelliJPlatformType.GoLand, "2024.3.3")
                 create(IntelliJPlatformType.GoLand, "2025.1.2")
                 create(IntelliJPlatformType.GoLand, "2025.2.1")
-                create(IntelliJPlatformType.GoLand, "2025.3.1")
+                create(IntelliJPlatformType.GoLand, "2025.3")
 
                 // ===== CLion =====
                 create(IntelliJPlatformType.CLion, "2024.2.3")
                 create(IntelliJPlatformType.CLion, "2024.3.3")
                 create(IntelliJPlatformType.CLion, "2025.1.2")
                 create(IntelliJPlatformType.CLion, "2025.2.1")
-                create(IntelliJPlatformType.CLion, "2025.3.1")
+                create(IntelliJPlatformType.CLion, "2025.3")
 
                 // ===== PyCharm =====
                 create(IntelliJPlatformType.PyCharmCommunity, "2024.2.4")
                 create(IntelliJPlatformType.PyCharmCommunity, "2024.3.3")
                 create(IntelliJPlatformType.PyCharmCommunity, "2025.1.2")
                 create(IntelliJPlatformType.PyCharmCommunity, "2025.2.1")
-                create(IntelliJPlatformType.PyCharmCommunity, "2025.3.1")
+                create(IntelliJPlatformType.PyCharmCommunity, "2025.3")
 
                 // ===== PhpStorm =====
                 create(IntelliJPlatformType.PhpStorm, "2024.2.4")
                 create(IntelliJPlatformType.PhpStorm, "2024.3.3")
                 create(IntelliJPlatformType.PhpStorm, "2025.1.2")
                 create(IntelliJPlatformType.PhpStorm, "2025.2.1")
-                create(IntelliJPlatformType.PhpStorm, "2025.3.1")
+                create(IntelliJPlatformType.PhpStorm, "2025.3")
             }
         }
     }

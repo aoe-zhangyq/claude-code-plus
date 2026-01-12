@@ -83,7 +83,7 @@ application {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 // 确保编译前先生成 proto

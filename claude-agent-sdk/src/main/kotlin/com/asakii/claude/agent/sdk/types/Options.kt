@@ -148,6 +148,11 @@ data class ClaudeAgentOptions(
     // If not set, uses "node" from system PATH
     val nodePath: String? = null,
 
+    // WSL mode configuration
+    val wslModeEnabled: Boolean = false,         // Enable WSL mode
+    val wslClaudeBridgePath: String? = null,     // WSL Claude bridge script path (e.g., D:\Tools\cc.ps1)
+    val wslHostIp: String? = null,               // WSL host IP (e.g., 172.20.160.1) for accessing Windows services from WSL
+
     // Hook configurations
     val hooks: Map<HookEvent, List<HookMatcher>>? = null,
 

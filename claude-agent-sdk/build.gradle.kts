@@ -64,7 +64,7 @@ dependencies {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 tasks.test {
@@ -526,7 +526,14 @@ val installPatchDeps = tasks.register("installPatchDeps") {
         }
 
         println("📦 安装 AST 补丁依赖...")
-        val process = ProcessBuilder("npm", "install")
+
+        // 查找 npm 路径
+        val npmPath = System.getenv("PATH")?.split(File.pathSeparator)?.mapNotNull { path ->
+            val npmFile = File(path, if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "npm.cmd" else "npm")
+            if (npmFile.canExecute()) npmFile.absolutePath else null
+        }?.firstOrNull() ?: "npm"
+
+        val process = ProcessBuilder(npmPath, "install")
             .directory(patchesDir)
             .redirectErrorStream(true)
             .start()

@@ -92,22 +92,22 @@ jobs:
             platformMajor: 252
           # 2025.3 版本
           - type: II
-            version: "2025.3.1"
+            version: "2025.3.1.1"
             platformMajor: 253
           - type: WS
-            version: "2025.3.1"
+            version: "2025.3.1.1"
             platformMajor: 253
           - type: GO
-            version: "2025.3.1"
+            version: "2025.3.1.1"
             platformMajor: 253
           - type: CL
-            version: "2025.3.1"
+            version: "2025.3.1.1"
             platformMajor: 253
           - type: PC
-            version: "2025.3.1"
+            version: "2025.3.1.1"
             platformMajor: 253
           - type: PS
-            version: "2025.3.1"
+            version: "2025.3.1.1"
             platformMajor: 253
 
     name: Verify ${{ matrix.ide.type }} ${{ matrix.ide.version }}

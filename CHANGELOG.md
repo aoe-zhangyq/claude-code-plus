@@ -242,7 +242,7 @@ All notable changes to this project will be documented in this file.
 - Remove cleanCli dependency from clean task to preserve committed CLI files
 - Explicitly declare protobuf-java as api dependency for OrBuilder interfaces
 - Add comprehensive IDE verification matrix for CI
-- Bump IntelliJ Platform version to 2025.3.1
+- Bump IntelliJ Platform version to 2025.3.1.1
 
 ### Docs
 - Add new screenshots to all README versions

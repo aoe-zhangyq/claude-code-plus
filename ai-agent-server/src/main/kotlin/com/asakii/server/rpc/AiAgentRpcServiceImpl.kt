@@ -812,6 +812,10 @@ class AiAgentRpcServiceImpl(
             agents = agents.ifEmpty { null },
             // Node.js 可执行文件路径（用户配置 > 环境变量 > 默认 "node"）
             nodePath = defaults.nodePath,
+            // WSL 模式配置
+            wslModeEnabled = defaults.wslModeEnabled,
+            wslClaudeBridgePath = defaults.wslClaudeBridgePath,
+            wslHostIp = defaults.wslHostIp,
             // Claude CLI settings.json 路径（用于加载环境变量等配置）
             settings = defaults.settings,
             // IDEA 文件同步 hooks（由 jetbrains-plugin 提供）

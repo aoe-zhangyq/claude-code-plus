@@ -69,7 +69,7 @@ tasks.withType<ProcessResources> {
 
 // 统一 JVM 版本为 17（与其他模块保持一致）
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 publishing {

@@ -111,10 +111,29 @@ class SubprocessTransport(
             logger.info("🔧 构建的命令: ${command.joinToString(" ")}")
 
             val processBuilder = ProcessBuilder(command)
-            processBuilder.directory(options.cwd?.toFile() ?: java.io.File(System.getProperty("user.dir")))
+
+            // 设置工作目录
+            val workingDir = if (options.wslModeEnabled && options.cwd != null) {
+                // WSL 模式：转换 Windows 路径为 WSL 路径
+                val wslPath = com.asakii.claude.agent.sdk.utils.WslPathConverter.windowsToWslPath(options.cwd.toString())
+                logger.info("🔧 [WSL] Converted working directory: ${options.cwd} -> $wslPath")
+                // 在 WSL 模式下，仍然使用 Windows 路径作为 ProcessBuilder 的目录
+                // 但通过环境变量告诉 PowerShell 脚本实际的 WSL 工作目录
+                options.cwd.toFile()
+            } else {
+                options.cwd?.toFile() ?: java.io.File(System.getProperty("user.dir"))
+            }
+            processBuilder.directory(workingDir)
 
             // 设置环境变量
             val env = processBuilder.environment()
+
+            // WSL 模式：传递 WSL 工作目录路径
+            if (options.wslModeEnabled && options.cwd != null) {
+                val wslPath = com.asakii.claude.agent.sdk.utils.WslPathConverter.windowsToWslPath(options.cwd.toString())
+                env["CLAUDE_WSL_CWD"] = wslPath
+                logger.info("🔧 [WSL] Set CLAUDE_WSL_CWD environment variable: $wslPath")
+            }
             options.env.forEach { (key, value) ->
                 env[key] = value
             }
@@ -554,6 +573,20 @@ class SubprocessTransport(
                 }
             }
 
+            // WSL 模式：转换 MCP HTTP URL 中的 localhost/127.0.0.1
+            if (options.wslModeEnabled && options.wslHostIp != null) {
+                logger.info("🔧 [WSL] Converting MCP URLs for WSL access (host: ${options.wslHostIp})")
+                val converted = com.asakii.claude.agent.sdk.utils.WslPathConverter.convertMcpServersConfig(
+                    serversForCli,
+                    options.wslHostIp
+                )
+                // 将转换结果合并回 serversForCli
+                converted.forEach { (name, config) ->
+                    @Suppress("UNCHECKED_CAST")
+                    serversForCli[name] = config as? Map<String, Any?> ?: serversForCli[name]!!
+                }
+            }
+
             if (serversForCli.isNotEmpty()) {
                 val mcpConfigJson = buildJsonObject {
                     putJsonObject("mcpServers") {
@@ -659,12 +692,37 @@ class SubprocessTransport(
     /**
      * Find the Claude executable in the system.
      * 优先级：
-     * 1. 用户指定路径 (options.cliPath)
-     * 2. SDK 绑定的 CLI (resources/bundled/claude-cli-<version>.js, 通过 Node.js 运行)
-     * 3. 系统全局安装的 CLI
+     * 1. WSL 模式：如果启用 WSL 模式且配置了 wslClaudeBridgePath，使用 PowerShell 调用该脚本
+     * 2. 用户指定路径 (options.cliPath)
+     * 3. SDK 绑定的 CLI (resources/bundled/claude-cli-<version>.js, 通过 Node.js 运行)
+     * 4. 系统全局安装的 CLI
      */
     private fun findClaudeExecutable(): List<String> {
-        // 1. 用户指定路径（最高优先级）
+        // 0. WSL 模式（最高优先级）
+        if (options.wslModeEnabled && options.wslClaudeBridgePath != null) {
+            val bridgePath = options.wslClaudeBridgePath!!
+            logger.info("✅ 使用 WSL Claude 桥接脚本: $bridgePath")
+
+            // 如果配置的是 .ps1 文件，尝试使用同目录下的 .cmd 文件
+            // .cmd 文件通过 cmd.exe 调用 PowerShell，能更可靠地处理参数传递
+            val cmdPath = if (bridgePath.lowercase().endsWith(".ps1")) {
+                bridgePath.replace(".ps1", ".cmd").replace(".PS1", ".cmd")
+            } else {
+                bridgePath
+            }
+
+            val cmdFile = java.io.File(cmdPath)
+            if (cmdFile.exists()) {
+                logger.info("✅ 使用 .cmd 桥接脚本: $cmdPath")
+                return listOf(cmdPath)
+            } else {
+                // 回退到直接调用 .ps1（通过 PowerShell -File）
+                logger.info("✅ .cmd 不存在，使用 PowerShell 调用 .ps1: $bridgePath")
+                return listOf("powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-File", bridgePath)
+            }
+        }
+
+        // 1. 用户指定路径
         options.cliPath?.let { customPath ->
             logger.info("✅ 使用用户指定的 CLI: $customPath")
             return listOf(customPath.toString())
@@ -698,7 +756,7 @@ class SubprocessTransport(
      * @throws NodeNotFoundException 如果配置的路径无效或无法找到 Node.js
      */
     private fun findNodeExecutable(): String {
-        // 1. 用户配置的路径（最高优先级）- 严格验证，无效则报错
+        // 1. 用户配置的路径 - 严格验证，无效则报错
         options.nodePath?.takeIf { it.isNotBlank() }?.let { userPath ->
             val file = java.io.File(userPath)
             if (!file.exists()) {

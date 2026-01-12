@@ -37,6 +37,10 @@ data class ClaudeDefaults(
     val permissionMode: String? = null,
     // Node.js 可执行文件路径，null 时使用系统 PATH 中的 "node"
     val nodePath: String? = null,
+    // WSL 模式配置
+    val wslModeEnabled: Boolean = false,         // 是否启用 WSL 模式
+    val wslClaudeBridgePath: String? = null,     // WSL Claude 桥接脚本路径（如 D:\Tools\cc.ps1）
+    val wslHostIp: String? = null,               // WSL 主机 IP（如 172.20.160.1），用于从 WSL 访问 Windows 服务
     // Claude CLI settings.json 路径，null 时不指定（CLI 会自动查找 ~/.claude/settings.json）
     val settings: String? = null,
     // 集成 MCP 服务器启用配置

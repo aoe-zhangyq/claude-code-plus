@@ -143,6 +143,9 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
     // General Tab 组件
     private var defaultBypassPermissionsCheckbox: JBCheckBox? = null
     private var nodePathField: TextFieldWithBrowseButton? = null
+    private var wslModeEnabledCheckbox: JBCheckBox? = null
+    private var wslClaudeBridgePathField: TextFieldWithBrowseButton? = null
+    private var wslHostIpField: JTextField? = null
     private var defaultModelCombo: ComboBox<ModelInfo>? = null
     private var defaultThinkingLevelCombo: ComboBox<ThinkingLevelConfig>? = null
     private var thinkTokensSpinner: JSpinner? = null
@@ -246,6 +249,10 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
         // Node.js 路径（使用兼容层自动选择最佳 API）
         val descriptor = FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
+        // PowerShell 脚本描述符（用于选择 .ps1 文件）
+        val psDescriptor = FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
+            .withTitle("Select PowerShell Script")
+            .withDescription("Choose a PowerShell script file (.ps1)")
         nodePathField = TextFieldWithBrowseButton().apply {
             // 使用兼容层：2024.2 使用旧 API，2024.3+ 使用新 API
             BrowseButtonCompat.addBrowseFolderListener(
@@ -273,6 +280,43 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         }
         panel.add(createLabeledRow("Node.js path:", nodePathField!!))
         panel.add(createDescription("  Path to Node.js executable. Leave empty to auto-detect from system PATH."))
+        panel.add(Box.createVerticalStrut(8))
+
+        // === WSL 模式配置 ===
+        panel.add(createSeparator())
+        panel.add(createSectionTitle("WSL Mode"))
+        panel.add(createDescription("Run Claude Code in WSL using bridge scripts."))
+
+        wslModeEnabledCheckbox = JBCheckBox("Enable WSL mode").apply {
+            toolTipText = "When enabled, use bridge scripts to run Claude Code in WSL environment"
+            alignmentX = JPanel.LEFT_ALIGNMENT
+        }
+        panel.add(wslModeEnabledCheckbox)
+        panel.add(createDescription("  Use PowerShell bridge scripts to execute commands in WSL."))
+
+        // WSL Claude 桥接脚本路径
+        wslClaudeBridgePathField = TextFieldWithBrowseButton().apply {
+            BrowseButtonCompat.addBrowseFolderListener(
+                this,
+                "Select WSL Claude Bridge Script",
+                "Choose the PowerShell script for Claude bridge (e.g., D:\\Tools\\cc.ps1)",
+                null,
+                psDescriptor
+            )
+            toolTipText = "PowerShell script that bridges Claude execution to WSL"
+            preferredSize = Dimension(450, preferredSize.height)
+        }
+        panel.add(createLabeledRow("Claude bridge script:", wslClaudeBridgePathField!!))
+        panel.add(createDescription("  Path to PowerShell script (e.g., D:\\Tools\\cc.ps1). Leave empty to use default CLI."))
+
+        // WSL 主机 IP
+        wslHostIpField = JTextField().apply {
+            toolTipText = "WSL host IP for accessing Windows services from WSL (e.g., 172.20.160.1)"
+            preferredSize = Dimension(450, preferredSize.height)
+        }
+        panel.add(createLabeledRow("WSL host IP:", wslHostIpField!!))
+        panel.add(createDescription("  IP address of Windows host as seen from WSL. Used to access MCP servers."))
+        panel.add(Box.createVerticalStrut(8))
 
         // 默认模型（从 ModelInfo 列表中选择，包含内置和自定义模型）
         defaultModelCombo = ComboBox<ModelInfo>().apply {
@@ -957,6 +1001,9 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         // General Tab
         val generalModified =
             nodePathField?.text != settings.nodePath ||
+            wslModeEnabledCheckbox?.isSelected != settings.wslModeEnabled ||
+            wslClaudeBridgePathField?.text != settings.wslClaudeBridgePath ||
+            wslHostIpField?.text != settings.wslHostIp ||
             modelModified ||
             customModelsModified ||
             (defaultThinkingLevelCombo?.selectedItem as? ThinkingLevelConfig)?.id != settings.defaultThinkingLevelId ||
@@ -995,6 +1042,9 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
         // General Tab
         settings.nodePath = nodePathField?.text ?: ""
+        settings.wslModeEnabled = wslModeEnabledCheckbox?.isSelected ?: false
+        settings.wslClaudeBridgePath = wslClaudeBridgePathField?.text ?: ""
+        settings.wslHostIp = wslHostIpField?.text ?: ""
 
         // 保存选中的模型（使用 ModelInfo 的 id）
         val selectedModel = defaultModelCombo?.selectedItem as? ModelInfo
@@ -1033,6 +1083,9 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
         // General Tab
         nodePathField?.text = settings.nodePath
+        wslModeEnabledCheckbox?.isSelected = settings.wslModeEnabled
+        wslClaudeBridgePathField?.text = settings.wslClaudeBridgePath
+        wslHostIpField?.text = settings.wslHostIp
 
         // 加载自定义模型到表格
         customModelsTableModel?.rowCount = 0  // 清空表格
@@ -1092,6 +1145,8 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
     override fun disposeUIResources() {
         nodePathField = null
+        wslModeEnabledCheckbox = null
+        wslClaudeBridgePathField = null
         defaultModelCombo = null
         defaultThinkingLevelCombo = null
         thinkTokensSpinner = null

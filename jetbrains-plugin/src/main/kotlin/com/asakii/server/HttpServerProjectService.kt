@@ -174,6 +174,9 @@ class HttpServerProjectService(private val project: Project) : Disposable {
                     defaultModel = settings.defaultModel,  // 使用模型 ID（内置或自定义）
                     claude = ClaudeDefaults(
                         nodePath = settings.nodePath.takeIf { it.isNotBlank() },
+                        wslModeEnabled = settings.wslModeEnabled,
+                        wslClaudeBridgePath = settings.wslClaudeBridgePath.takeIf { it.isNotBlank() },
+                        wslHostIp = settings.wslHostIp.takeIf { it.isNotBlank() },
                         permissionMode = settings.permissionMode.takeIf { it.isNotBlank() && it != "default" },
                         includePartialMessages = settings.includePartialMessages,
                         enableUserInteractionMcp = settings.enableUserInteractionMcp,

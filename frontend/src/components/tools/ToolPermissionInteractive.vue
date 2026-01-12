@@ -3,15 +3,36 @@
     v-if="pendingPermission"
     ref="containerRef"
     class="permission-request"
+    :class="{ 'from-other-tab': permissionTabInfo && !permissionTabInfo.isCurrentTab }"
+    :style="{ left: position.x + 'px', top: position.y + 'px' }"
     tabindex="0"
     @keydown.esc="handleDeny"
+    @click="switchToPermissionTab"
   >
     <div class="permission-card">
+      <!-- 拖动手柄 -->
+      <div
+        class="drag-handle"
+        :class="{ dragging: isDragging }"
+        @mousedown="startDrag"
+        @click.stop
+      >
+        <span class="drag-dots">⋮⋮</span>
+      </div>
+
       <!-- 工具信息头部 -->
       <div class="permission-header">
         <span class="tool-icon">{{ getToolIcon(pendingPermission.toolName) }}</span>
         <span class="tool-name">{{ getToolDisplayName(pendingPermission.toolName) || pendingPermission.toolName || 'Unknown Tool' }}</span>
         <span class="permission-label">{{ t('permission.needsAuth') }}</span>
+        <!-- 来自其他 tab 的提示 -->
+        <span
+          v-if="permissionTabInfo && !permissionTabInfo.isCurrentTab"
+          class="tab-indicator"
+          title="点击切换到此会话"
+        >
+          {{ permissionTabInfo.tabName }}
+        </span>
       </div>
 
       <!-- 工具参数预览 -->
@@ -85,7 +106,7 @@
       </div>
 
       <!-- 操作选项 -->
-      <div class="permission-options">
+      <div class="permission-options" @click.stop>
         <!-- 允许（仅本次） -->
         <button class="btn-option btn-allow" @click="isExitPlanMode ? handleApproveWithMode('default') : handleApprove()">
           {{ t('permission.allow') }}
@@ -132,12 +153,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useI18n } from '@/composables/useI18n'
 import { jetbrainsBridge, isIdeEnvironment } from '@/services/jetbrainsApi'
 import MarkdownRenderer from '@/components/markdown/MarkdownRenderer.vue'
-import type { PermissionUpdate } from '@/types/permission'
+import type { PermissionUpdate, PendingPermissionRequest } from '@/types/permission'
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
@@ -147,6 +168,104 @@ const denyReason = ref('')
 
 // Plan 展开状态
 const planExpanded = ref(false)
+
+// 拖动状态
+const isDragging = ref(false)
+const dragOffset = ref({ x: 0, y: 0 })
+const position = ref({ x: 16, y: 80 }) // 默认位置：右上角区域
+const INITIAL_POSITION_KEY = 'permission-dialog-position'
+
+// 从 localStorage 读取上次位置
+function loadSavedPosition() {
+  try {
+    const saved = localStorage.getItem(INITIAL_POSITION_KEY)
+    if (saved) {
+      const pos = JSON.parse(saved)
+      // 确保位置在可视区域内
+      const maxX = window.innerWidth - 300
+      const maxY = window.innerHeight - 200
+      position.value = {
+        x: Math.max(16, Math.min(pos.x, maxX)),
+        y: Math.max(80, Math.min(pos.y, maxY))
+      }
+    }
+  } catch {
+    // 使用默认位置
+  }
+}
+
+// 保存位置到 localStorage
+function savePosition() {
+  try {
+    localStorage.setItem(INITIAL_POSITION_KEY, JSON.stringify(position.value))
+  } catch {
+    // 忽略保存失败
+  }
+}
+
+// 开始拖动
+function startDrag(event: MouseEvent) {
+  event.preventDefault()
+  isDragging.value = true
+  dragOffset.value = {
+    x: event.clientX - position.value.x,
+    y: event.clientY - position.value.y
+  }
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+}
+
+// 拖动中
+function onDrag(event: MouseEvent) {
+  if (!isDragging.value) return
+
+  const newX = event.clientX - dragOffset.value.x
+  const newY = event.clientY - dragOffset.value.y
+
+  // 限制在可视区域内
+  const maxX = window.innerWidth - (containerRef.value?.offsetWidth || 300)
+  const maxY = window.innerHeight - (containerRef.value?.offsetHeight || 200)
+
+  position.value = {
+    x: Math.max(0, Math.min(newX, maxX)),
+    y: Math.max(0, Math.min(newY, maxY))
+  }
+}
+
+// 停止拖动
+function stopDrag() {
+  if (isDragging.value) {
+    isDragging.value = false
+    savePosition()
+    document.removeEventListener('mousemove', onDrag)
+    document.removeEventListener('mouseup', stopDrag)
+  }
+}
+
+// 组件挂载时加载位置
+onMounted(() => {
+  loadSavedPosition()
+  // 窗口大小改变时确保窗口在可视区域内
+  window.addEventListener('resize', () => {
+    const rect = containerRef.value?.getBoundingClientRect()
+    if (rect) {
+      const maxX = window.innerWidth - rect.width
+      const maxY = window.innerHeight - rect.height
+      if (position.value.x > maxX || position.value.y > maxY) {
+        position.value = {
+          x: Math.max(16, Math.min(position.value.x, maxX)),
+          y: Math.max(80, Math.min(position.value.y, maxY))
+        }
+      }
+    }
+  })
+})
+
+// 组件卸载时清理事件监听
+onBeforeUnmount(() => {
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+})
 
 // Plan 内容（计算属性）
 const planContent = computed(() => {
@@ -173,16 +292,62 @@ async function openPlanInIdea() {
   }
 }
 
-// 获取当前会话的第一个待处理授权请求
+// 获取所有 tab 的待处理授权请求（按创建时间排序，最早的在前面）
+const allPendingPermissions = computed(() => {
+  const allPermissions: Array<{
+    permission: PendingPermissionRequest
+    tabId: string
+    tabName: string
+    isCurrentTab: boolean
+  }> = []
+
+  for (const tab of sessionStore.tabs) {
+    const permissions = tab.permissions.pendingPermissionList.value
+    for (const p of permissions) {
+      allPermissions.push({
+        permission: p,
+        tabId: tab.tabId,
+        tabName: tab.name.value,
+        isCurrentTab: tab.tabId === sessionStore.currentTabId
+      })
+    }
+  }
+
+  // 按创建时间排序，最早的在前面
+  allPermissions.sort((a, b) => a.permission.createdAt - b.permission.createdAt)
+  return allPermissions
+})
+
+// 获取第一个待处理的权限请求（来自最早创建的请求）
 const pendingPermission = computed(() => {
-  const permissions = sessionStore.getCurrentPendingPermissions()
-  return permissions.length > 0 ? permissions[0] : null
+  return allPendingPermissions.value[0]?.permission || null
+})
+
+// 获取第一个请求所属的 tab 信息
+const permissionTabInfo = computed(() => {
+  const first = allPendingPermissions.value[0]
+  return first ? {
+    tabId: first.tabId,
+    tabName: first.tabName,
+    isCurrentTab: first.isCurrentTab
+  } : null
 })
 
 // 检查是否是 ExitPlanMode 权限请求
 const isExitPlanMode = computed(() => {
   return pendingPermission.value?.toolName === 'ExitPlanMode'
 })
+
+// 点击弹窗切换到对应的 tab
+async function switchToPermissionTab() {
+  if (!permissionTabInfo.value || permissionTabInfo.value.isCurrentTab) return
+
+  try {
+    await sessionStore.switchTab(permissionTabInfo.value.tabId)
+  } catch (error) {
+    console.warn('[ToolPermission] Failed to switch tab:', error)
+  }
+}
 
 // 当有新的权限请求时，自动聚焦并清空拒绝原因
 watch(pendingPermission, (newVal) => {
@@ -387,15 +552,56 @@ function hasInputParams(input: Record<string, unknown>): boolean {
 
 <style scoped>
 .permission-request {
+  position: fixed;
   outline: none;
-  max-height: 60vh; /* 限制最大高度，避免遮挡过多 */
+  max-height: 120px; /* 与输入框高度相近，避免遮挡聊天记录 */
+  max-width: 400px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  transition: max-height 0.2s ease;
+  z-index: 1000;
+}
+
+/* 当内容过多时，允许扩展到更大高度（用户交互后可扩展） */
+.permission-request.expanded {
+  max-height: 40vh;
 }
 
 .permission-request:focus .permission-card {
   box-shadow: 0 0 0 2px var(--theme-accent, #0366d6), 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+/* 拖动手柄 */
+.drag-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  cursor: move;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: 12px 12px 0 0;
+}
+
+.drag-handle:hover {
+  background: var(--theme-hover-background, rgba(0, 0, 0, 0.05));
+}
+
+.drag-handle.dragging {
+  cursor: grabbing;
+  background: var(--theme-hover-background, rgba(0, 0, 0, 0.08));
+}
+
+.drag-dots {
+  font-size: 12px;
+  color: var(--theme-muted, #6a737d);
+  opacity: 0.5;
+  letter-spacing: 2px;
+  user-select: none;
 }
 
 .permission-card {
@@ -413,7 +619,7 @@ function hasInputParams(input: Record<string, unknown>): boolean {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 24px 16px 12px; /* 顶部增加空间给拖动手柄 */
   background: var(--theme-panel-background, #f6f8fa);
   color: var(--theme-foreground, #24292e);
 }
@@ -435,6 +641,38 @@ function hasInputParams(input: Record<string, unknown>): boolean {
   border-radius: 999px;
   margin-left: auto;
   border: 1px solid var(--theme-accent, #0366d6);
+}
+
+/* 来自其他 tab 的指示器 */
+.tab-indicator {
+  font-size: 11px;
+  background: var(--theme-warning, #ffc107);
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: 6px;
+  border: 1px solid var(--theme-warning, #ffc107);
+  font-weight: 600;
+  animation: pulse-tab 2s ease-in-out infinite;
+}
+
+@keyframes pulse-tab {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* 来自其他 tab 的弹窗样式 */
+.permission-request.from-other-tab {
+  cursor: pointer;
+}
+
+.permission-request.from-other-tab .permission-card {
+  border-color: var(--theme-warning, #ffc107);
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.3), 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 .permission-content {
@@ -611,10 +849,10 @@ function hasInputParams(input: Record<string, unknown>): boolean {
 }
 
 .btn-option {
-  padding: 9px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
   text-align: left;
