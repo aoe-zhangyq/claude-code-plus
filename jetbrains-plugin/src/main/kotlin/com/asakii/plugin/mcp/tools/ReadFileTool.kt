@@ -1,6 +1,8 @@
 package com.asakii.plugin.mcp.tools
 
 import com.asakii.claude.agent.sdk.mcp.ToolResult
+import com.asakii.claude.agent.sdk.utils.WslPathConverter
+import com.asakii.claude.agent.sdk.utils.WslPathDirection
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
@@ -26,12 +28,26 @@ private val logger = KotlinLogging.logger {}
  * - JAR 内路径: C:/path/to/file.jar!/com/example/MyClass.class
  * - jar:// URL: jar://C:/path/to/file.jar!/com/example/MyClass.class
  * - JDK 源码: C:/jdk/lib/src.zip!/java.base/java/lang/String.java
+ * - WSL 路径（wslModeEnabled 时）: /mnt/d/path/to/file.java
+ *
+ * @param project IDEA 项目
+ * @param wslModeEnabled 是否启用 WSL 模式（自动转换路径格式）
  */
-class ReadFileTool(private val project: Project) {
+class ReadFileTool(
+    private val project: Project,
+    private val wslModeEnabled: Boolean = false
+) {
 
     fun execute(arguments: Map<String, Any>): Any {
-        val filePath = arguments["filePath"] as? String
+        // WSL 模式：将 WSL 路径转换为 Windows 路径
+        val rawFilePath = arguments["filePath"] as? String
             ?: return ToolResult.error("Missing required parameter: filePath")
+
+        val filePath = if (wslModeEnabled && WslPathConverter.isWslMountPath(rawFilePath)) {
+            WslPathConverter.convertPath(rawFilePath, WslPathDirection.WSL_TO_WINDOWS)
+        } else {
+            rawFilePath
+        }
 
         val maxLines = ((arguments["maxLines"] as? Number)?.toInt() ?: 500).coerceIn(1, 5000)
         val offset = ((arguments["offset"] as? Number)?.toInt() ?: 0).coerceAtLeast(0)
@@ -49,7 +65,14 @@ class ReadFileTool(private val project: Project) {
                 val content = getFileContent(virtualFile)
                     ?: return@compute ToolResult.error("Cannot read file content: $filePath (possibly binary or unsupported format)")
 
-                formatOutput(filePath, virtualFile, content, offset, maxLines)
+                val output = formatOutput(filePath, virtualFile, content, offset, maxLines)
+
+                // WSL 模式：转换结果中的 Windows 路径为 WSL 路径
+                if (wslModeEnabled) {
+                    WslPathConverter.convertPathsInResult(output)
+                } else {
+                    output
+                }
             }
         } catch (e: Exception) {
             logger.error(e) { "Error reading file: $filePath" }

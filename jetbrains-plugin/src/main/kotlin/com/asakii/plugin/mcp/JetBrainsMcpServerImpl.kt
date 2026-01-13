@@ -15,9 +15,12 @@ private val logger = KotlinLogging.logger {}
 
 /**
  * JetBrains MCP 服务器实现
- * 
+ *
  * 提供 IDEA 平台相关的工具，如目录树、文件问题检测、文件索引搜索、代码搜索等。
  * 这些工具利用 IDEA 的强大索引和分析能力，提供比纯文件系统操作更丰富的功能。
+ *
+ * WSL 模式支持：
+ * 当启用 WSL 模式时，工具会自动转换路径格式，确保 CC（运行在 WSL 中）能正确处理 Windows 路径。
  */
 @McpServerConfig(
     name = "jetbrains",
@@ -25,7 +28,11 @@ private val logger = KotlinLogging.logger {}
     description = "JetBrains IDE integration tool server, providing directory browsing, file problem detection, index search, code search and other features"
 )
 class JetBrainsMcpServerImpl(private val project: Project) : McpServerBase() {
-    
+
+    // WSL 模式配置
+    private val wslModeEnabled: Boolean
+        get() = AgentSettingsService.getInstance().wslModeEnabled
+
     // 工具实例
     private lateinit var directoryTreeTool: DirectoryTreeTool
     private lateinit var fileProblemsTool: FileProblemsTool
@@ -36,7 +43,18 @@ class JetBrainsMcpServerImpl(private val project: Project) : McpServerBase() {
     private lateinit var readFileTool: ReadFileTool
 
     override fun getSystemPromptAppendix(): String {
-        return AgentSettingsService.getInstance().effectiveJetbrainsInstructions
+        val baseInstructions = AgentSettingsService.getInstance().effectiveJetbrainsInstructions
+        return if (wslModeEnabled) {
+            """
+            $baseInstructions
+
+            **WSL Mode Enabled:**
+            - All file paths returned are in WSL format (e.g., /mnt/d/Develop/Code/project)
+            - Input paths in WSL format are automatically converted to Windows format
+            """.trimIndent()
+        } else {
+            baseInstructions
+        }
     }
 
     /**
@@ -116,6 +134,7 @@ class JetBrainsMcpServerImpl(private val project: Project) : McpServerBase() {
 
     override suspend fun onInitialize() {
         logger.info { "🔧 Initializing JetBrains MCP Server for project: ${project.name}" }
+        logger.info { "🔧 WSL Mode: ${if (wslModeEnabled) "ENABLED" else "DISABLED"}" }
 
         try {
             // 验证预加载的 Schema
@@ -125,15 +144,15 @@ class JetBrainsMcpServerImpl(private val project: Project) : McpServerBase() {
                 logger.error { "❌ No schemas loaded! Tools will not work properly." }
             }
 
-            // 初始化工具实例
+            // 初始化工具实例（传递 WSL 模式配置）
             logger.info { "🔧 Creating tool instances..." }
-            directoryTreeTool = DirectoryTreeTool(project)
-            fileProblemsTool = FileProblemsTool(project)
-            fileIndexTool = FileIndexTool(project)
-            codeSearchTool = CodeSearchTool(project)
-            findUsagesTool = FindUsagesTool(project)
-            renameTool = RenameTool(project)
-            readFileTool = ReadFileTool(project)
+            directoryTreeTool = DirectoryTreeTool(project, wslModeEnabled)
+            fileProblemsTool = FileProblemsTool(project, wslModeEnabled)
+            fileIndexTool = FileIndexTool(project, wslModeEnabled)
+            codeSearchTool = CodeSearchTool(project, wslModeEnabled)
+            findUsagesTool = FindUsagesTool(project, wslModeEnabled)
+            renameTool = RenameTool(project, wslModeEnabled)
+            readFileTool = ReadFileTool(project, wslModeEnabled)
             logger.info { "✅ All tool instances created" }
 
             // 注册目录树工具（使用预加载的 Schema）

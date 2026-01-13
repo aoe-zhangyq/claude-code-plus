@@ -1,6 +1,7 @@
 package com.asakii.plugin.mcp.tools
 
 import com.asakii.claude.agent.sdk.mcp.ToolResult
+import com.asakii.claude.agent.sdk.utils.WslPathConverter
 import com.asakii.server.mcp.schema.SchemaValidator
 import com.asakii.server.mcp.schema.ToolSchemaLoader
 import com.asakii.server.mcp.schema.ValidationError
@@ -16,7 +17,10 @@ import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.asakii.plugin.services.LanguageAnalysisService
 import kotlinx.serialization.Serializable
+import mu.KotlinLogging
 import java.io.File
+
+private val logger = KotlinLogging.logger {}
 
 /**
  * 使用类型 - 针对不同符号类型的细粒度过滤
@@ -74,8 +78,14 @@ data class FindUsagesResult(
  * - 类: 继承、实例化、类型引用、导入
  * - 方法: 覆盖、调用、方法引用
  * - 字段/变量: 读取、写入
+ *
+ * @param project IDEA 项目
+ * @param wslModeEnabled 是否启用 WSL 模式（自动转换路径格式）
  */
-class FindUsagesTool(private val project: Project) {
+class FindUsagesTool(
+    private val project: Project,
+    private val wslModeEnabled: Boolean = false
+) {
 
     fun getInputSchema(): Map<String, Any> = ToolSchemaLoader.getSchema("FindUsages")
 
@@ -337,7 +347,14 @@ class FindUsagesTool(private val project: Project) {
             sb.append(" *(showing ${offset + 1}-${offset + usages.size}, more available)*")
         }
 
-        return sb.toString()
+        val result = sb.toString()
+
+        // WSL 模式：转换结果中的 Windows 路径为 WSL 路径
+        return if (wslModeEnabled) {
+            WslPathConverter.convertPathsInResult(result)
+        } else {
+            result
+        }
     }
 
     /**

@@ -816,6 +816,8 @@ class AiAgentRpcServiceImpl(
             wslModeEnabled = defaults.wslModeEnabled,
             wslClaudeBridgePath = defaults.wslClaudeBridgePath,
             wslHostIp = defaults.wslHostIp,
+            wslNodePath = defaults.wslNodePath,
+            wslClaudePath = defaults.wslClaudePath,
             // Claude CLI settings.json 路径（用于加载环境变量等配置）
             settings = defaults.settings,
             // IDEA 文件同步 hooks（由 jetbrains-plugin 提供）

@@ -3,6 +3,16 @@ package com.asakii.claude.agent.sdk.utils
 import mu.KotlinLogging
 
 /**
+ * WSL 路径转换方向
+ */
+enum class WslPathDirection {
+    /** Windows → WSL (MCP 响应 → CC) */
+    WINDOWS_TO_WSL,
+    /** WSL → Windows (CC → MCP 请求) */
+    WSL_TO_WINDOWS
+}
+
+/**
  * WSL 路径转换工具类
  *
  * 用于在 Windows 模式和 WSL 模式之间转换路径和 URL。
@@ -143,5 +153,105 @@ object WslPathConverter {
                 else -> config
             }
         }
+    }
+
+    /**
+     * 根据方向转换路径
+     *
+     * @param path 原始路径
+     * @param direction 转换方向
+     * @return 转换后的路径
+     */
+    fun convertPath(path: String, direction: WslPathDirection): String {
+        if (path.isEmpty()) return path
+        return when (direction) {
+            WslPathDirection.WINDOWS_TO_WSL -> windowsToWslPath(path)
+            WslPathDirection.WSL_TO_WINDOWS -> wslToWindowsPath(path)
+        }
+    }
+
+    /**
+     * 转换参数 Map 中的指定字段为 WSL 路径
+     *
+     * 用于 MCP 工具请求参数的路径转换（WSL → Windows）
+     *
+     * @param arguments 原始参数 Map
+     * @param pathFields 需要转换的字段名列表
+     * @return 转换后的参数 Map
+     */
+    fun convertArgumentsPaths(
+        arguments: Map<String, Any>,
+        pathFields: List<String> = listOf("path", "filePath", "file", "directory")
+    ): Map<String, Any> {
+        val result = arguments.toMutableMap()
+        for (field in pathFields) {
+            val value = result[field]
+            if (value is String) {
+                result[field] = convertPath(value, WslPathDirection.WSL_TO_WINDOWS)
+            }
+        }
+        return result
+    }
+
+    /**
+     * 转换结果字符串中的 Windows 路径为 WSL 路径
+     *
+     * 用于 MCP 工具响应结果的路径转换（Windows → WSL）
+     * 查找字符串中所有符合 Windows 路径格式的子串并转换
+     *
+     * @param result 原始结果字符串
+     * @return 转换后的结果字符串
+     */
+    fun convertPathsInResult(result: String): String {
+        if (result.isEmpty()) return result
+
+        // 匹配 Windows 路径模式：盘符:\路径
+        // 如 D:\Develop\Code 或 D:/Develop/Code
+        val windowsPathPattern = Regex("""([A-Za-z]):[\\/][^`\s"']*[^\s`"']""")
+
+        return windowsPathPattern.replace(result) { match ->
+            val windowsPath = match.value
+            val wslPath = windowsToWslPath(windowsPath)
+            if (wslPath != windowsPath) {
+                logger.debug { "🔄 [WSL] Converted path in result: $windowsPath → $wslPath" }
+                wslPath
+            } else {
+                match.value
+            }
+        }
+    }
+
+    /**
+     * 检测路径是否为 Windows 绝对路径
+     *
+     * @param path 待检测路径
+     * @return true 如果是 Windows 绝对路径
+     */
+    fun isWindowsAbsolutePath(path: String): Boolean {
+        if (path.isEmpty()) return false
+        val driveLetterPattern = Regex("^([A-Za-z]):[/\\\\]")
+        return driveLetterPattern.containsMatchIn(path)
+    }
+
+    /**
+     * 检测路径是否为 WSL /mnt/ 路径
+     *
+     * @param path 待检测路径
+     * @return true 如果是 WSL /mnt/ 路径
+     */
+    fun isWslMountPath(path: String): Boolean {
+        if (path.isEmpty()) return false
+        return path.startsWith("/mnt/") || path.startsWith("/mnt\\")
+    }
+
+    /**
+     * 批量转换字符串列表中的路径
+     *
+     * @param paths 路径列表
+     * @param direction 转换方向
+     * @return 转换后的路径列表
+     */
+    fun convertPathList(paths: List<String>, direction: WslPathDirection): List<String> {
+        return paths.map { convertPath(it, direction) }
     }
 }

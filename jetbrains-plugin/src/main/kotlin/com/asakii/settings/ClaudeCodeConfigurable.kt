@@ -146,6 +146,8 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
     private var wslModeEnabledCheckbox: JBCheckBox? = null
     private var wslClaudeBridgePathField: TextFieldWithBrowseButton? = null
     private var wslHostIpField: JTextField? = null
+    private var wslNodePathField: JTextField? = null
+    private var wslClaudePathField: JTextField? = null
     private var defaultModelCombo: ComboBox<ModelInfo>? = null
     private var defaultThinkingLevelCombo: ComboBox<ThinkingLevelConfig>? = null
     private var thinkTokensSpinner: JSpinner? = null
@@ -285,16 +287,32 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         // === WSL 模式配置 ===
         panel.add(createSeparator())
         panel.add(createSectionTitle("WSL Mode"))
-        panel.add(createDescription("Run Claude Code in WSL using bridge scripts."))
+        panel.add(createDescription("Run Claude Code in WSL environment."))
 
         wslModeEnabledCheckbox = JBCheckBox("Enable WSL mode").apply {
-            toolTipText = "When enabled, use bridge scripts to run Claude Code in WSL environment"
+            toolTipText = "When enabled, run Claude Code in WSL using wsl.exe"
             alignmentX = JPanel.LEFT_ALIGNMENT
         }
         panel.add(wslModeEnabledCheckbox)
-        panel.add(createDescription("  Use PowerShell bridge scripts to execute commands in WSL."))
+        panel.add(createDescription("  Execute Claude CLI directly in WSL via wsl.exe claude."))
 
-        // WSL Claude 桥接脚本路径
+        // WSL Node.js 路径
+        wslNodePathField = JTextField().apply {
+            toolTipText = "WSL 内 Node.js 可执行文件路径 (如 /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node)"
+            preferredSize = Dimension(450, preferredSize.height)
+        }
+        panel.add(createLabeledRow("WSL node path:", wslNodePathField!!))
+        panel.add(createDescription("  Path to node executable in WSL. Leave empty to use PATH."))
+
+        // WSL Claude 路径
+        wslClaudePathField = JTextField().apply {
+            toolTipText = "WSL 内 claude 可执行文件路径 (如 /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude)"
+            preferredSize = Dimension(450, preferredSize.height)
+        }
+        panel.add(createLabeledRow("WSL claude path:", wslClaudePathField!!))
+        panel.add(createDescription("  Path to claude executable in WSL. Leave empty to use PATH."))
+
+        // WSL Claude 桥接脚本路径（已废弃）
         wslClaudeBridgePathField = TextFieldWithBrowseButton().apply {
             BrowseButtonCompat.addBrowseFolderListener(
                 this,
@@ -303,11 +321,11 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
                 null,
                 psDescriptor
             )
-            toolTipText = "PowerShell script that bridges Claude execution to WSL"
+            toolTipText = "PowerShell script that bridges Claude execution to WSL (deprecated)"
             preferredSize = Dimension(450, preferredSize.height)
         }
-        panel.add(createLabeledRow("Claude bridge script:", wslClaudeBridgePathField!!))
-        panel.add(createDescription("  Path to PowerShell script (e.g., D:\\Tools\\cc.ps1). Leave empty to use default CLI."))
+        panel.add(createLabeledRow("Claude bridge script (deprecated):", wslClaudeBridgePathField!!))
+        panel.add(createDescription("  Path to PowerShell script (e.g., D:\\Tools\\cc.ps1). Deprecated: use direct WSL execution."))
 
         // WSL 主机 IP
         wslHostIpField = JTextField().apply {
@@ -1004,6 +1022,8 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
             wslModeEnabledCheckbox?.isSelected != settings.wslModeEnabled ||
             wslClaudeBridgePathField?.text != settings.wslClaudeBridgePath ||
             wslHostIpField?.text != settings.wslHostIp ||
+            wslNodePathField?.text != settings.wslNodePath ||
+            wslClaudePathField?.text != settings.wslClaudePath ||
             modelModified ||
             customModelsModified ||
             (defaultThinkingLevelCombo?.selectedItem as? ThinkingLevelConfig)?.id != settings.defaultThinkingLevelId ||
@@ -1045,6 +1065,8 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         settings.wslModeEnabled = wslModeEnabledCheckbox?.isSelected ?: false
         settings.wslClaudeBridgePath = wslClaudeBridgePathField?.text ?: ""
         settings.wslHostIp = wslHostIpField?.text ?: ""
+        settings.wslNodePath = wslNodePathField?.text ?: ""
+        settings.wslClaudePath = wslClaudePathField?.text ?: ""
 
         // 保存选中的模型（使用 ModelInfo 的 id）
         val selectedModel = defaultModelCombo?.selectedItem as? ModelInfo
@@ -1086,6 +1108,8 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         wslModeEnabledCheckbox?.isSelected = settings.wslModeEnabled
         wslClaudeBridgePathField?.text = settings.wslClaudeBridgePath
         wslHostIpField?.text = settings.wslHostIp
+        wslNodePathField?.text = settings.wslNodePath
+        wslClaudePathField?.text = settings.wslClaudePath
 
         // 加载自定义模型到表格
         customModelsTableModel?.rowCount = 0  // 清空表格
@@ -1147,6 +1171,9 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         nodePathField = null
         wslModeEnabledCheckbox = null
         wslClaudeBridgePathField = null
+        wslHostIpField = null
+        wslNodePathField = null
+        wslClaudePathField = null
         defaultModelCombo = null
         defaultThinkingLevelCombo = null
         thinkTokensSpinner = null

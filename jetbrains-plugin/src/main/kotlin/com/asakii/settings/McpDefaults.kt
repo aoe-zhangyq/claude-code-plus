@@ -161,7 +161,7 @@ object McpDefaults {
 
   "FileProblems": {
     "type": "object",
-    "description": "Get static analysis results for a file, including compilation errors, warnings and code inspection issues.",
+    "description": "Get static analysis results for a file, including compilation errors, warnings and code inspection issues. Automatically refreshes VFS to detect external file modifications.",
     "properties": {
       "filePath": {
         "type": "string",
@@ -187,6 +187,11 @@ object McpDefaults {
         "description": "Maximum number of problems to return",
         "default": 50,
         "minimum": 1
+      },
+      "refresh": {
+        "type": "boolean",
+        "description": "Refresh VFS before analysis to ensure file modifications are detected. Recommended after editing files.",
+        "default": true
       }
     },
     "required": ["filePath"]
@@ -393,7 +398,7 @@ object McpDefaults {
 You have access to JetBrains IDE tools that leverage the IDE's powerful indexing and analysis capabilities:
 
 - `mcp__jetbrains__DirectoryTree`: Browse project directory structure with filtering options
-- `mcp__jetbrains__FileProblems`: Get static analysis results for a file (syntax errors, code errors, warnings, suggestions)
+- `mcp__jetbrains__FileProblems`: Get static analysis results for a file (syntax errors, code errors, warnings, suggestions). Auto-refreshes VFS by default.
 - `mcp__jetbrains__FileIndex`: Search files, classes, and symbols using IDE index (supports scope filtering)
 - `mcp__jetbrains__CodeSearch`: Search code content across project files (like Find in Files)
 - `mcp__jetbrains__FindUsages`: Find all references/usages of a symbol (class, method, field, variable) in the project
@@ -405,7 +410,19 @@ CRITICAL: You MUST use JetBrains tools instead of Glob/Grep. DO NOT use Glob or 
 - ALWAYS use `mcp__jetbrains__FileIndex` instead of `Glob` for finding files, classes, and symbols
 - Only fall back to Glob/Grep if JetBrains tools return errors or cannot handle the specific query
 
-IMPORTANT: After completing code modifications, you MUST use `mcp__jetbrains__FileProblems` to perform static analysis validation on the modified files to minimize syntax errors.
+### File Refresh & Validation Strategy
+
+**Problem**: Files modified via this plugin may not be immediately detected by IDEA's VFS.
+
+**When to use FileProblems**:
+- After writing/editing files: `FileProblems` will auto-refresh (default behavior)
+- After batch modifications: Call `FileProblems` on each modified file
+- Pure problem checking (no modifications): Use `FileProblems(refresh=false)` to skip VFS refresh
+
+**Validation workflow**:
+1. After any code modification → `FileProblems(filePath="...")`  (refresh=true by default)
+2. Review and fix any reported errors
+3. Run `FileProblems` again to confirm fixes
 
 ### Refactoring Workflow
 

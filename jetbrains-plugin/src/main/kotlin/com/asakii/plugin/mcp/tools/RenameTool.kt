@@ -1,6 +1,7 @@
 package com.asakii.plugin.mcp.tools
 
 import com.asakii.claude.agent.sdk.mcp.ToolResult
+import com.asakii.claude.agent.sdk.utils.WslPathConverter
 import com.asakii.server.mcp.schema.SchemaValidator
 import com.asakii.server.mcp.schema.ToolSchemaLoader
 import com.asakii.server.mcp.schema.ValidationError
@@ -15,8 +16,11 @@ import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.rename.RenameProcessor
 import kotlinx.serialization.Serializable
+import mu.KotlinLogging
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
+
+private val logger = KotlinLogging.logger {}
 
 @Serializable
 data class RenameResult(
@@ -62,8 +66,14 @@ enum class SymbolType {
  * - 变量、参数重命名
  * - 文件重命名
  * - 搜索注释和字符串中的引用
+ *
+ * @param project IDEA 项目
+ * @param wslModeEnabled 是否启用 WSL 模式（自动转换路径格式）
  */
-class RenameTool(private val project: Project) {
+class RenameTool(
+    private val project: Project,
+    private val wslModeEnabled: Boolean = false
+) {
 
     fun getInputSchema(): Map<String, Any> = ToolSchemaLoader.getSchema("Rename")
 
@@ -221,7 +231,14 @@ class RenameTool(private val project: Project) {
                 }
             }
 
-            return sb.toString()
+            val result = sb.toString()
+
+            // WSL 模式：转换结果中的 Windows 路径为 WSL 路径
+            return if (wslModeEnabled) {
+                WslPathConverter.convertPathsInResult(result)
+            } else {
+                result
+            }
 
         } catch (e: IllegalArgumentException) {
             return ToolResult.error(e.message ?: "Unknown error")

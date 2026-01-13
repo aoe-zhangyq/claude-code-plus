@@ -1,6 +1,8 @@
 package com.asakii.plugin.mcp.tools
 
 import com.asakii.claude.agent.sdk.mcp.ToolResult
+import com.asakii.claude.agent.sdk.utils.WslPathConverter
+import com.asakii.claude.agent.sdk.utils.WslPathDirection
 import com.asakii.server.mcp.schema.ToolSchemaLoader
 import com.intellij.codeHighlighting.HighlightDisplayLevel
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
@@ -18,6 +20,7 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiErrorElement
 import com.intellij.psi.PsiFile
@@ -80,19 +83,34 @@ data class FileProblemsResult(
  *
  * 使用 InspectionEngine API 直接运行检查，无需打开文件
  * 参考: https://plugins.jetbrains.com/docs/intellij/code-inspections.html
+ *
+ * @param project IDEA 项目
+ * @param wslModeEnabled 是否启用 WSL 模式（自动转换路径格式）
  */
-class FileProblemsTool(private val project: Project) {
+class FileProblemsTool(
+    private val project: Project,
+    private val wslModeEnabled: Boolean = false
+) {
 
     fun getInputSchema(): Map<String, Any> = ToolSchemaLoader.getSchema("FileProblems")
 
     suspend fun execute(arguments: Map<String, Any>): Any {
-        val filePath = arguments["filePath"] as? String
+        // WSL 模式：将 WSL 路径转换为 Windows 路径
+        val rawFilePath = arguments["filePath"] as? String
             ?: return ToolResult.error("Missing required parameter: filePath")
+
+        val filePath = if (wslModeEnabled && WslPathConverter.isWslMountPath(rawFilePath)) {
+            WslPathConverter.convertPath(rawFilePath, WslPathDirection.WSL_TO_WINDOWS)
+        } else {
+            rawFilePath
+        }
         val includeWarnings = arguments["includeWarnings"] as? Boolean ?: true
         val includeSuggestions = arguments["includeSuggestions"] as? Boolean ?: false
         // 兼容旧参数名
         val includeWeakWarnings = arguments["includeWeakWarnings"] as? Boolean ?: includeSuggestions
         val maxProblems = ((arguments["maxProblems"] as? Number)?.toInt() ?: 50).coerceAtLeast(1)
+        // 刷新 VFS 以确保文件修改被 IDEA 感知（默认启用）
+        val refresh = arguments["refresh"] as? Boolean ?: true
 
         val projectPath = project.basePath
             ?: return ToolResult.error("Cannot get project path")
@@ -105,6 +123,14 @@ class FileProblemsTool(private val project: Project) {
 
         val virtualFile = LocalFileSystem.getInstance().findFileByPath(absolutePath)
             ?: return ToolResult.error("File not found: $filePath")
+
+        // 刷新 VFS 以确保文件修改被 IDEA 感知
+        if (refresh) {
+            logger.debug { "🔄 Refreshing VFS for file: $filePath" }
+            VirtualFileManager.getInstance().syncRefresh()
+            // 同时刷新具体文件
+            virtualFile.refresh(true, false)
+        }
 
         val problems = mutableListOf<FileProblem>()
         var syntaxErrorCount = 0
@@ -224,7 +250,14 @@ class FileProblemsTool(private val project: Project) {
             sb.append("📊 Summary: ${parts.joinToString(" | ")}")
         }
 
-        return sb.toString()
+        val result = sb.toString()
+
+        // WSL 模式：转换结果中的 Windows 路径为 WSL 路径
+        return if (wslModeEnabled) {
+            WslPathConverter.convertPathsInResult(result)
+        } else {
+            result
+        }
     }
 
     /**

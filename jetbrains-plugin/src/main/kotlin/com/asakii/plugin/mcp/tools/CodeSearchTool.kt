@@ -1,6 +1,8 @@
 package com.asakii.plugin.mcp.tools
 
 import com.asakii.claude.agent.sdk.mcp.ToolResult
+import com.asakii.claude.agent.sdk.utils.WslPathConverter
+import com.asakii.claude.agent.sdk.utils.WslPathDirection
 import com.asakii.server.mcp.schema.ToolSchemaLoader
 import com.intellij.find.FindModel
 import com.intellij.find.impl.FindInProjectUtil
@@ -15,8 +17,11 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.usageView.UsageInfo
 import kotlinx.serialization.Serializable
+import mu.KotlinLogging
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
+
+private val logger = KotlinLogging.logger {}
 
 @Serializable
 enum class SearchScope {
@@ -50,10 +55,16 @@ data class CodeSearchResult(
 
 /**
  * 代码搜索工具
- * 
+ *
  * 在项目文件中搜索代码或文本内容（类似 IDEA 的 Find in Files 功能）
+ *
+ * @param project IDEA 项目
+ * @param wslModeEnabled 是否启用 WSL 模式（自动转换路径格式）
  */
-class CodeSearchTool(private val project: Project) {
+class CodeSearchTool(
+    private val project: Project,
+    private val wslModeEnabled: Boolean = false
+) {
 
     fun getInputSchema(): Map<String, Any> = ToolSchemaLoader.getSchema("CodeSearch")
 
@@ -141,7 +152,13 @@ class CodeSearchTool(private val project: Project) {
                         if (scopeArg.isNullOrBlank()) {
                             throw IllegalArgumentException("Directory scope requires scopeArg (directory path)")
                         }
-                        val dirPath = File(projectPath, scopeArg).canonicalPath
+                        // WSL 模式：将 WSL 路径转换为 Windows 路径
+                        val processedScopeArg = if (wslModeEnabled && WslPathConverter.isWslMountPath(scopeArg)) {
+                            WslPathConverter.convertPath(scopeArg, WslPathDirection.WSL_TO_WINDOWS)
+                        } else {
+                            scopeArg
+                        }
+                        val dirPath = File(projectPath, processedScopeArg).canonicalPath
                         val dir = LocalFileSystem.getInstance().findFileByPath(dirPath)
                         if (dir == null || !dir.isDirectory) {
                             throw IllegalArgumentException("Directory not found: $scopeArg")
@@ -273,6 +290,13 @@ class CodeSearchTool(private val project: Project) {
             sb.append(" *(showing ${offset + 1}-${offset + matches.size})*")
         }
 
-        return sb.toString()
+        val result = sb.toString()
+
+        // WSL 模式：转换结果中的 Windows 路径为 WSL 路径
+        return if (wslModeEnabled) {
+            WslPathConverter.convertPathsInResult(result)
+        } else {
+            result
+        }
     }
 }

@@ -321,6 +321,27 @@ class SubprocessTransport(
     override fun isConnected(): Boolean = isConnectedFlag && process?.isAlive == true
 
     /**
+     * 将文件路径转换为适合传递给 CLI 的格式
+     *
+     * 在 WSL 模式下，将 Windows 路径转换为 WSL 路径
+     * 例如：C:\Users\...\file.txt → /mnt/c/Users/.../file.txt
+     *
+     * @param path 原始路径（Windows 格式）
+     * @return WSL 模式下返回 WSL 路径，否则返回原路径
+     */
+    private fun convertPathForCli(path: String): String {
+        return if (options.wslModeEnabled) {
+            val wslPath = com.asakii.claude.agent.sdk.utils.WslPathConverter.windowsToWslPath(path)
+            if (wslPath != path) {
+                logger.info("🔄 [WSL] Converted temp file path: $path → $wslPath")
+            }
+            wslPath
+        } else {
+            path
+        }
+    }
+
+    /**
      * Build the Claude CLI command with appropriate arguments.
      */
     private fun buildCommand(): List<String> {
@@ -380,7 +401,7 @@ class SubprocessTransport(
                     val tempFile = getOrCreateSystemPromptFile(prompt)
                     logger.info("📝 将 system-prompt 写入临时文件: $tempFile")
                     command.add("--system-prompt-file")
-                    command.add(tempFile.toAbsolutePath().toString())
+                    command.add(convertPathForCli(tempFile.toAbsolutePath().toString()))
                 }
                 is SystemPromptPreset -> {
                     if (prompt.preset == "claude_code") {
@@ -393,7 +414,7 @@ class SubprocessTransport(
                             val tempFile = getOrCreateSystemPromptFile(appendText)
                             logger.info("📝 将 append-system-prompt 写入临时文件: $tempFile")
                             command.add("--append-system-prompt-file")
-                            command.add(tempFile.toAbsolutePath().toString())
+                            command.add(convertPathForCli(tempFile.toAbsolutePath().toString()))
                         }
                     } else {
                         // Unknown preset, use as system prompt
@@ -414,7 +435,9 @@ class SubprocessTransport(
             val tempFile = getOrCreateSystemPromptFile(appendContent)
             logger.info("📝 将 appendSystemPromptFile 写入临时文件: $tempFile")
             command.add("--append-system-prompt-file")
-            command.add(wrapArgForPlatform(tempFile.toAbsolutePath().toString(), isWindows))
+            // WSL 模式下路径已转换，不需要额外引号处理
+            val pathForCli = convertPathForCli(tempFile.toAbsolutePath().toString())
+            command.add(if (options.wslModeEnabled) pathForCli else wrapArgForPlatform(pathForCli, isWindows))
         }
 
         // Allowed tools（Windows 需要引号包裹，Unix 系统不需要）
@@ -640,8 +663,10 @@ class SubprocessTransport(
                 tempFiles.add(tempFile)
 
                 // --mcp-config 参数接受文件路径（不需要 @ 前缀）
-                command.addAll(listOf("--mcp-config", tempFile.toAbsolutePath().toString()))
-                logger.info("🔧 MCP 配置（使用文件）: $tempFile")
+                // WSL 模式下需要转换 Windows 路径为 WSL 路径
+                val mcpConfigPath = convertPathForCli(tempFile.toAbsolutePath().toString())
+                command.addAll(listOf("--mcp-config", mcpConfigPath))
+                logger.info("🔧 MCP 配置（使用文件）: $mcpConfigPath")
                 logger.debug("🔧 MCP 配置内容: $mcpConfigJson")
             }
         }
@@ -690,36 +715,70 @@ class SubprocessTransport(
     }
     
     /**
+     * 构建通过指定 node 执行 claude 的 WSL 命令
+     *
+     * @param nodePath WSL 内 node 可执行文件路径（可以是完整路径或 bin 目录）
+     * @param claudePath WSL 内 claude 路径或命令
+     * @return 命令列表，如 ["wsl.exe", "sh", "-c", "export PATH=/home/ubuntu/.nvm/versions/node/v24.12.0/bin:$PATH; exec /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude -- \"$@\"", "--"]
+     */
+    private fun buildWslCommandWithNode(nodePath: String, claudePath: String): List<String> {
+        // 判断 nodePath 是否指向 node 可执行文件
+        val nodeExecPath = if (nodePath.endsWith("/node") || nodePath.endsWith("/node.exe")) {
+            nodePath
+        } else {
+            // 如果是 bin 目录，追加 node
+            "${nodePath.trimEnd('/')}/node"
+        }
+
+        // node 可执行文件的 bin 目录（用于设置 PATH）
+        val nodeBinDir = nodeExecPath.substringBeforeLast("/")
+
+        // 构建 shell 命令：设置 PATH 后执行 claude
+        // 使用 exec 替换 shell 进程，确保信号正确传递
+        val shellCommand = """
+            export PATH=$nodeBinDir:'$$'PATH; exec $nodeExecPath $claudePath -- "$$@"
+        """.trimIndent().replace("\n", " ")
+
+        logger.info("🔧 [WSL] 构建的命令: wsl.exe sh -c '$shellCommand' --")
+
+        return listOf("wsl.exe", "sh", "-c", shellCommand, "--")
+    }
+
+    /**
      * Find the Claude executable in the system.
      * 优先级：
-     * 1. WSL 模式：如果启用 WSL 模式且配置了 wslClaudeBridgePath，使用 PowerShell 调用该脚本
+     * 1. WSL 模式：直接使用 wsl.exe 调用 WSL 中的 claude 命令
      * 2. 用户指定路径 (options.cliPath)
      * 3. SDK 绑定的 CLI (resources/bundled/claude-cli-<version>.js, 通过 Node.js 运行)
-     * 4. 系统全局安装的 CLI
      */
     private fun findClaudeExecutable(): List<String> {
         // 0. WSL 模式（最高优先级）
-        if (options.wslModeEnabled && options.wslClaudeBridgePath != null) {
-            val bridgePath = options.wslClaudeBridgePath!!
-            logger.info("✅ 使用 WSL Claude 桥接脚本: $bridgePath")
+        if (options.wslModeEnabled) {
+            logger.info("✅ 使用 WSL 模式运行 Claude CLI")
 
-            // 如果配置的是 .ps1 文件，尝试使用同目录下的 .cmd 文件
-            // .cmd 文件通过 cmd.exe 调用 PowerShell，能更可靠地处理参数传递
-            val cmdPath = if (bridgePath.lowercase().endsWith(".ps1")) {
-                bridgePath.replace(".ps1", ".cmd").replace(".PS1", ".cmd")
-            } else {
-                bridgePath
+            // 如果配置了 wslClaudePath，直接使用该路径
+            options.wslClaudePath?.let { claudePath ->
+                logger.info("✅ [WSL] 使用配置的 claude 路径: $claudePath")
+                // 如果配置了 wslNodePath，通过 node 执行 claude 脚本
+                options.wslNodePath?.let { nodePath ->
+                    logger.info("✅ [WSL] 使用配置的 node 路径: $nodePath")
+                    // 使用 wsl.exe 执行: sh -c 'export PATH=...:$PATH; exec node claudePath -- "$@"' --
+                    return buildWslCommandWithNode(nodePath, claudePath)
+                }
+                // 否则直接执行 claude 路径（需要可执行权限）
+                return listOf("wsl.exe", claudePath, "--")
             }
 
-            val cmdFile = java.io.File(cmdPath)
-            if (cmdFile.exists()) {
-                logger.info("✅ 使用 .cmd 桥接脚本: $cmdPath")
-                return listOf(cmdPath)
-            } else {
-                // 回退到直接调用 .ps1（通过 PowerShell -File）
-                logger.info("✅ .cmd 不存在，使用 PowerShell 调用 .ps1: $bridgePath")
-                return listOf("powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-File", bridgePath)
+            // 如果只配置了 wslNodePath（bin 目录），使用它来执行 claude
+            options.wslNodePath?.let { nodePath ->
+                logger.info("✅ [WSL] 使用配置的 node 路径: $nodePath")
+                // nodePath 指向 bin 目录，通过 node 执行 claude
+                return buildWslCommandWithNode(nodePath, "claude")
             }
+
+            // 默认：使用 wsl.exe 执行 claude（依赖 WSL PATH）
+            logger.info("✅ [WSL] 使用默认 claude 命令（依赖 WSL PATH）")
+            return listOf("wsl.exe", "claude", "--")
         }
 
         // 1. 用户指定路径

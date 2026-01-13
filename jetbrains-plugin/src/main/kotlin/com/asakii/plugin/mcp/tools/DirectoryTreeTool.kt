@@ -1,12 +1,17 @@
 package com.asakii.plugin.mcp.tools
 
 import com.asakii.claude.agent.sdk.mcp.ToolResult
+import com.asakii.claude.agent.sdk.utils.WslPathConverter
+import com.asakii.claude.agent.sdk.utils.WslPathDirection
 import com.asakii.server.mcp.schema.ToolSchemaLoader
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.Serializable
+import mu.KotlinLogging
 import java.io.File
 import java.nio.file.FileSystems
 import java.nio.file.PathMatcher
+
+private val logger = KotlinLogging.logger {}
 
 /**
  * 目录树条目
@@ -35,15 +40,37 @@ data class DirectoryTreeResult(
 
 /**
  * 目录树工具
- * 
+ *
  * 获取项目目录中指定文件夹的目录树结构
+ *
+ * @param project IDEA 项目
+ * @param wslModeEnabled 是否启用 WSL 模式（自动转换路径格式）
  */
-class DirectoryTreeTool(private val project: Project) {
+class DirectoryTreeTool(
+    private val project: Project,
+    private val wslModeEnabled: Boolean = false
+) {
 
     fun getInputSchema(): Map<String, Any> = ToolSchemaLoader.getSchema("DirectoryTree")
 
     suspend fun execute(arguments: Map<String, Any>): Any {
-        val path = (arguments["path"] as? String)?.takeIf { it.isNotBlank() } ?: "."
+        // 处理 path 参数：WSL 模式下可能接收到 WSL 格式路径
+        val rawPath = (arguments["path"] as? String)?.takeIf { it.isNotBlank() } ?: "."
+        val path = if (wslModeEnabled && WslPathConverter.isWslMountPath(rawPath)) {
+            // 将 WSL 路径转换为 Windows 路径，然后转为相对路径
+            val windowsPath = WslPathConverter.convertPath(rawPath, WslPathDirection.WSL_TO_WINDOWS)
+            // 转换为相对于项目根目录的路径
+            val projectPath = project.basePath ?: return ToolResult.error("Cannot get project path")
+            val windowsFile = File(windowsPath)
+            val projectFile = File(projectPath)
+            try {
+                windowsFile.relativeTo(projectFile).path.replace("\\", "/")
+            } catch (e: Exception) {
+                rawPath
+            }
+        } else {
+            rawPath
+        }
         val maxDepthArg = (arguments["maxDepth"] as? Number)?.toInt() ?: 3
         val maxDepth = if (maxDepthArg <= 0) Int.MAX_VALUE else maxDepthArg  // -1 or 0 means unlimited
         val filesOnly = arguments["filesOnly"] as? Boolean ?: false
@@ -179,7 +206,14 @@ class DirectoryTreeTool(private val project: Project) {
         if (truncated) sb.append(" *(truncated, max entries reached)*")
         if (maxDepthReached) sb.append(" *(max depth reached)*")
 
-        return sb.toString()
+        val result = sb.toString()
+
+        // WSL 模式：转换结果中的 Windows 路径为 WSL 路径
+        return if (wslModeEnabled) {
+            WslPathConverter.convertPathsInResult(result)
+        } else {
+            result
+        }
     }
 
     private fun formatSize(bytes: Long): String {

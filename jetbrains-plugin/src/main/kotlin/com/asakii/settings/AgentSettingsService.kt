@@ -128,8 +128,10 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
         // WSL 模式配置
         var wslModeEnabled: Boolean = false,          // 是否启用 WSL 模式
-        var wslClaudeBridgePath: String = "",         // WSL Claude 桥接脚本路径（如 D:\Tools\cc.ps1）
+        var wslClaudeBridgePath: String = "",         // WSL Claude 桥接脚本路径（已废弃，保留用于兼容）
         var wslHostIp: String = "",                   // WSL 主机 IP（如 172.20.160.1），用于从 WSL 访问 Windows 服务
+        var wslNodePath: String = "",                 // WSL 内 Node.js 路径（如 /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node）
+        var wslClaudePath: String = "",               // WSL 内 claude 路径（如 /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude）
 
         // 默认模型（使用枚举名称存储，如 "OPUS_45"）
         var defaultModel: String = DefaultModel.OPUS_45.name,
@@ -482,6 +484,14 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
     var wslHostIp: String
         get() = state.wslHostIp
         set(value) { state.wslHostIp = value }
+
+    var wslNodePath: String
+        get() = state.wslNodePath
+        set(value) { state.wslNodePath = value }
+
+    var wslClaudePath: String
+        get() = state.wslClaudePath
+        set(value) { state.wslClaudePath = value }
 
     var defaultModel: String
         get() = state.defaultModel

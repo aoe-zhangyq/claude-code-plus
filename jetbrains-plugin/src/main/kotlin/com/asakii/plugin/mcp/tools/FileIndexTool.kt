@@ -1,6 +1,7 @@
 package com.asakii.plugin.mcp.tools
 
 import com.asakii.claude.agent.sdk.mcp.ToolResult
+import com.asakii.claude.agent.sdk.utils.WslPathConverter
 import com.asakii.server.mcp.schema.ToolSchemaLoader
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.DumbService
@@ -17,6 +18,9 @@ import com.intellij.psi.codeStyle.NameUtil
 import com.asakii.plugin.services.LanguageAnalysisService
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import mu.KotlinLogging
+
+private val logger = KotlinLogging.logger {}
 
 @Serializable
 enum class SearchIndexType {
@@ -54,10 +58,16 @@ data class FileIndexSearchResult(
 
 /**
  * 文件索引工具
- * 
+ *
  * 通过关键词在 IDEA 索引中搜索文件、类、符号、动作或文本
+ *
+ * @param project IDEA 项目
+ * @param wslModeEnabled 是否启用 WSL 模式（自动转换路径格式）
  */
-class FileIndexTool(private val project: Project) {
+class FileIndexTool(
+    private val project: Project,
+    private val wslModeEnabled: Boolean = false
+) {
 
     fun getInputSchema(): Map<String, Any> = ToolSchemaLoader.getSchema("FileIndex")
 
@@ -287,7 +297,14 @@ class FileIndexTool(private val project: Project) {
             sb.append(" *(showing ${offset + 1}-${offset + results.size}, more available)*")
         }
 
-        return sb.toString()
+        val result = sb.toString()
+
+        // WSL 模式：转换结果中的 Windows 路径为 WSL 路径
+        return if (wslModeEnabled) {
+            WslPathConverter.convertPathsInResult(result)
+        } else {
+            result
+        }
     }
 
     private fun getSymbolType(element: PsiElement?): String {
