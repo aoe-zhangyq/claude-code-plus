@@ -89,22 +89,6 @@ class SubprocessTransport(
         }
     }
 
-    /**
-     * 根据平台处理 JSON 参数（Windows 需要转义，Unix 直接传递）
-     * @param json JSON 字符串
-     * @param isWindows 是否为 Windows 平台
-     * @return 处理后的参数字符串
-     */
-    private fun wrapJsonForPlatform(json: String, isWindows: Boolean): String {
-        return if (isWindows) {
-            // Windows: 先转义反斜杠，再转义引号，最后用引号包裹
-            "\"" + json.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-        } else {
-            // Unix: 直接传递 JSON 字符串
-            json
-        }
-    }
-
     override suspend fun connect() = withContext(Dispatchers.IO) {
         try {
             val command = buildCommand()
@@ -470,9 +454,22 @@ class SubprocessTransport(
                     }
                 }.toString()
 
-                // 根据平台处理 JSON（Windows 需要转义，Unix 直接传递）
-                command.addAll(listOf("--agents", wrapJsonForPlatform(agentsJson, isWindows)))
-                logger.info("🤖 配置自定义代理: ${agents.keys.joinToString(", ")}")
+                // 创建临时文件存储 agents JSON（避免命令行转义问题，特别是 WSL 模式）
+                // 路径格式: 临时目录/claude-code-plus/claude_agents_日期_uuid.json
+                val tempDir = Path.of(System.getProperty("java.io.tmpdir"), "claude-code-plus")
+                Files.createDirectories(tempDir)
+                val timestamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy_MM_dd_HH"))
+                val uuid = java.util.UUID.randomUUID().toString().substring(0, 8)
+                val tempFile = tempDir.resolve("claude_agents_${timestamp}_${uuid}.json")
+                Files.writeString(tempFile, agentsJson)
+                tempFiles.add(tempFile)
+
+                // --agents 参数接受文件路径（不需要 @ 前缀）
+                // WSL 模式下需要转换 Windows 路径为 WSL 路径
+                val agentsConfigPath = convertPathForCli(tempFile.toAbsolutePath().toString())
+                command.addAll(listOf("--agents", agentsConfigPath))
+                logger.info("🤖 配置自定义代理（使用文件）: ${agents.keys.joinToString(", ")}")
+                logger.debug("🤖 Agents 配置内容: $agentsJson")
             }
         }
 
@@ -717,38 +714,26 @@ class SubprocessTransport(
     /**
      * 构建通过指定 node 执行 claude 的 WSL 命令
      *
-     * @param nodePath WSL 内 node 可执行文件路径或安装目录（自动补全）
+     * @param nodePath WSL 内 Node.js 安装目录（自动补全为 bin 目录并添加到 PATH）
+     *                 - 安装目录：/home/ubuntu/.nvm/versions/node/v24.12.0
+     *                 - bin 目录：/home/ubuntu/.nvm/versions/node/v24.12.0/bin
      *                 - 完整路径：/home/ubuntu/.nvm/versions/node/v24.12.0/bin/node
-     *                 - 安装目录：/home/ubuntu/.nvm/versions/node/v24.12.0（自动补全 /bin/node）
-     * @param claudePath WSL 内 claude 安装目录或完整路径（自动补全）
-     *                  - 安装目录：/home/ubuntu/.nvm/versions/node/v24.12.0（自动补全 /bin/claude）
-     *                  - 完整路径：/home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude
-     *                  - 留空：使用全局 claude 命令
-     * @return 命令列表，如 ["wsl.exe", "sh", "-c", "export PATH=/home/ubuntu/.nvm/versions/node/v24.12.0/bin:$PATH; exec /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude -- \"$@\"", "--"]
+     * @param claudeCommand claude 命令名称（通常就是 "claude"）
+     * @return 命令列表，如 ["wsl.exe", "sh", "-c", "export PATH=/home/ubuntu/.nvm/versions/node/v24.12.0/bin:$PATH; exec node claude -- \"$@\"", "--"]
      */
-    private fun buildWslCommandWithNode(nodePath: String, claudePath: String?): List<String> {
-        // 规范化 node 路径
+    private fun buildWslCommandWithNode(nodePath: String, claudeCommand: String): List<String> {
+        // 规范化 node 路径，获取 bin 目录
         val nodeExecPath = normalizeWslNodePath(nodePath)
-
-        // 规范化 claude 路径（如果提供）
-        val claudeExecPath = if (claudePath.isNullOrBlank()) {
-            "claude"  // 使用全局命令
-        } else {
-            normalizeWslClaudePath(claudePath)
-        }
-
-        // node 可执行文件的 bin 目录（用于设置 PATH）
         val nodeBinDir = nodeExecPath.substringBeforeLast("/")
 
-        // 构建 shell 命令：设置 PATH 后执行 claude
-        // 使用 exec 替换 shell 进程，确保信号正确传递
-        val shellCommand = """
-            export PATH=$nodeBinDir:${'$'}PATH; exec $nodeExecPath $claudeExecPath -- "${'$'}@"
-        """.trimIndent().replace("\n", " ")
+        // 构建 shell 命令：设置 PATH 后，直接调用 claude
+        // 注意：使用 "$@" 而不是 "${$@}"，后者会导致 bash 语法错误（bad substitution）
+        val shellCommand = "'$claudeCommand'"
 
-        logger.info("🔧 [WSL] 构建的命令: wsl.exe sh -c '$shellCommand' --")
+        logger.info("🔧 [WSL] 构建的命令: wsl.exe bash -c $shellCommand")
 
-        return listOf("wsl.exe", "sh", "-c", shellCommand, "--")
+        // 使用 bash 而不是 sh
+        return listOf("wsl.exe", "bash", "-c", "-l", shellCommand)
     }
 
     /**
@@ -776,30 +761,6 @@ class SubprocessTransport(
     }
 
     /**
-     * 规范化 WSL Claude 路径，自动补全为完整可执行文件路径
-     *
-     * @param claudePath 用户配置的路径（可能是安装目录或完整路径）
-     * @return 规范化后的完整可执行文件路径
-     *
-     * 示例：
-     * - /home/ubuntu/.nvm/versions/node/v24.12.0 → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude
-     * - /home/ubuntu/.nvm/versions/node/v24.12.0/bin → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude
-     * - /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude
-     */
-    private fun normalizeWslClaudePath(claudePath: String): String {
-        val trimmed = claudePath.trimEnd('/')
-
-        return when {
-            // 已经是完整可执行文件路径
-            trimmed.endsWith("/claude") || trimmed.endsWith("/claude.exe") -> trimmed
-            // 指向 bin 目录
-            trimmed.endsWith("/bin") -> "$trimmed/claude"
-            // 指向安装目录（如 /home/ubuntu/.nvm/versions/node/v24.12.0）
-            else -> "$trimmed/bin/claude"
-        }
-    }
-
-    /**
      * Find the Claude executable in the system.
      * 优先级：
      * 1. WSL 模式：直接使用 wsl.exe 调用 WSL 中的 claude 命令
@@ -811,20 +772,7 @@ class SubprocessTransport(
         if (options.wslModeEnabled) {
             logger.info("✅ 使用 WSL 模式运行 Claude CLI")
 
-            // 如果配置了 wslClaudePath，直接使用该路径
-            options.wslClaudePath?.let { claudePath ->
-                logger.info("✅ [WSL] 使用配置的 claude 路径: $claudePath")
-                // 如果配置了 wslNodePath，通过 node 执行 claude 脚本
-                options.wslNodePath?.let { nodePath ->
-                    logger.info("✅ [WSL] 使用配置的 node 路径: $nodePath")
-                    // 使用 wsl.exe 执行: sh -c 'export PATH=...:$PATH; exec node claudePath -- "$@"' --
-                    return buildWslCommandWithNode(nodePath, claudePath)
-                }
-                // 否则直接执行 claude 路径（需要可执行权限）
-                return listOf("wsl.exe", claudePath, "--")
-            }
-
-            // 如果只配置了 wslNodePath（bin 目录），使用它来执行 claude
+            // 如果配置了 wslNodePath（bin 目录），使用它来执行 claude
             options.wslNodePath?.let { nodePath ->
                 logger.info("✅ [WSL] 使用配置的 node 路径: $nodePath")
                 // nodePath 指向 bin 目录，通过 node 执行 claude

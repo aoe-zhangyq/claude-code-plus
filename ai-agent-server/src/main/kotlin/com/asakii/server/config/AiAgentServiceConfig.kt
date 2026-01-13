@@ -40,8 +40,7 @@ data class ClaudeDefaults(
     // WSL 模式配置
     val wslModeEnabled: Boolean = false,         // 是否启用 WSL 模式
     val wslHostIp: String? = null,               // WSL 主机 IP（如 172.20.160.1），用于从 WSL 访问 Windows 服务
-    val wslNodePath: String? = null,             // WSL 内 Node.js 安装路径（如 /home/ubuntu/.nvm/versions/node/v24.12.0，代码自动补全 /bin/node）
-    val wslClaudePath: String? = null,           // WSL 内 claude 安装路径（留空使用全局命令）
+    val wslNodePath: String? = null,             // WSL 内 Node.js 安装路径（如 /home/ubuntu/.nvm/versions/node/v24.12.0，自动添加到 PATH）
     // Claude CLI settings.json 路径，null 时不指定（CLI 会自动查找 ~/.claude/settings.json）
     val settings: String? = null,
     // 集成 MCP 服务器启用配置

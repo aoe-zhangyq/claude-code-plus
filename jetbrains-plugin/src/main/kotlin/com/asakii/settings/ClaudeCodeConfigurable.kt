@@ -146,7 +146,6 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
     private var wslModeEnabledCheckbox: JBCheckBox? = null
     private var wslHostIpField: JTextField? = null
     private var wslNodePathField: JTextField? = null
-    private var wslClaudePathField: JTextField? = null
     private var defaultModelCombo: ComboBox<ModelInfo>? = null
     private var defaultThinkingLevelCombo: ComboBox<ThinkingLevelConfig>? = null
     private var thinkTokensSpinner: JSpinner? = null
@@ -301,15 +300,7 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
             preferredSize = Dimension(450, preferredSize.height)
         }
         panel.add(createLabeledRow("WSL node path:", wslNodePathField!!))
-        panel.add(createDescription("  Node.js installation directory in WSL (e.g., /home/ubuntu/.nvm/versions/node/v24.12.0)."))
-
-        // WSL Claude 路径
-        wslClaudePathField = JTextField().apply {
-            toolTipText = "WSL 内 claude 安装路径 (如 /home/ubuntu/.nvm/versions/node/v24.12.0，自动补全 /bin/claude，留空使用全局命令)"
-            preferredSize = Dimension(450, preferredSize.height)
-        }
-        panel.add(createLabeledRow("WSL claude path:", wslClaudePathField!!))
-        panel.add(createDescription("  Claude installation directory in WSL (same as node path). Leave empty to use global command."))
+        panel.add(createDescription("  Node.js bin directory in WSL (e.g., /home/ubuntu/.nvm/versions/node/v24.12.0). This will be added to PATH."))
 
         // WSL 主机 IP
         wslHostIpField = JTextField().apply {
@@ -1006,7 +997,6 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
             wslModeEnabledCheckbox?.isSelected != settings.wslModeEnabled ||
             wslHostIpField?.text != settings.wslHostIp ||
             wslNodePathField?.text != settings.wslNodePath ||
-            wslClaudePathField?.text != settings.wslClaudePath ||
             modelModified ||
             customModelsModified ||
             (defaultThinkingLevelCombo?.selectedItem as? ThinkingLevelConfig)?.id != settings.defaultThinkingLevelId ||
@@ -1048,7 +1038,6 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         settings.wslModeEnabled = wslModeEnabledCheckbox?.isSelected ?: false
         settings.wslHostIp = wslHostIpField?.text ?: ""
         settings.wslNodePath = wslNodePathField?.text ?: ""
-        settings.wslClaudePath = wslClaudePathField?.text ?: ""
 
         // 保存选中的模型（使用 ModelInfo 的 id）
         val selectedModel = defaultModelCombo?.selectedItem as? ModelInfo
@@ -1090,7 +1079,6 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         wslModeEnabledCheckbox?.isSelected = settings.wslModeEnabled
         wslHostIpField?.text = settings.wslHostIp
         wslNodePathField?.text = settings.wslNodePath
-        wslClaudePathField?.text = settings.wslClaudePath
 
         // 加载自定义模型到表格
         customModelsTableModel?.rowCount = 0  // 清空表格
@@ -1151,10 +1139,8 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
     override fun disposeUIResources() {
         nodePathField = null
         wslModeEnabledCheckbox = null
-        wslClaudeBridgePathField = null
         wslHostIpField = null
         wslNodePathField = null
-        wslClaudePathField = null
         defaultModelCombo = null
         defaultThinkingLevelCombo = null
         thinkTokensSpinner = null

@@ -152,7 +152,6 @@ data class ClaudeAgentOptions(
     val wslModeEnabled: Boolean = false,         // Enable WSL mode (runs cc via wsl.exe)
     val wslHostIp: String? = null,               // WSL host IP (e.g., 172.20.160.1) for MCP URL conversion
     val wslNodePath: String? = null,             // WSL 内 Node.js 安装路径 (e.g., /home/ubuntu/.nvm/versions/node/v24.12.0，代码自动补全 /bin/node)
-    val wslClaudePath: String? = null,           // WSL 内 claude 安装路径 (e.g., /home/ubuntu/.nvm/versions/node/v24.12.0，代码自动补全 /bin/claude)
 
     // Hook configurations
     val hooks: Map<HookEvent, List<HookMatcher>>? = null,

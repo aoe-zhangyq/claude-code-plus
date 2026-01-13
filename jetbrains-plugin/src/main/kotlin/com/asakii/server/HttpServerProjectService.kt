@@ -175,10 +175,8 @@ class HttpServerProjectService(private val project: Project) : Disposable {
                     claude = ClaudeDefaults(
                         nodePath = settings.nodePath.takeIf { it.isNotBlank() },
                         wslModeEnabled = settings.wslModeEnabled,
-                        wslClaudeBridgePath = settings.wslClaudeBridgePath.takeIf { it.isNotBlank() },
                         wslHostIp = settings.wslHostIp.takeIf { it.isNotBlank() },
                         wslNodePath = settings.wslNodePath.takeIf { it.isNotBlank() },
-                        wslClaudePath = settings.wslClaudePath.takeIf { it.isNotBlank() },
                         permissionMode = settings.permissionMode.takeIf { it.isNotBlank() && it != "default" },
                         includePartialMessages = settings.includePartialMessages,
                         enableUserInteractionMcp = settings.enableUserInteractionMcp,
