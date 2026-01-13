@@ -728,12 +728,12 @@ class SubprocessTransport(
 
         // 构建 shell 命令：设置 PATH 后，直接调用 claude
         // 注意：使用 "$@" 而不是 "${$@}"，后者会导致 bash 语法错误（bad substitution）
-        val shellCommand = "'claude \$@'"
+        val shellCommand = "claude"
 
-        logger.info("🔧 [WSL] 构建的命令: wsl.exe bash -c $shellCommand")
+        logger.info("🔧 [WSL] 构建的命令: wsl $shellCommand")
 
         // 使用 bash 而不是 sh
-        return listOf("wsl.exe", "bash", "-c", "-l", shellCommand)
+        return listOf("wsl", shellCommand)
     }
 
     /**
