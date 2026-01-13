@@ -717,17 +717,24 @@ class SubprocessTransport(
     /**
      * 构建通过指定 node 执行 claude 的 WSL 命令
      *
-     * @param nodePath WSL 内 node 可执行文件路径（可以是完整路径或 bin 目录）
-     * @param claudePath WSL 内 claude 路径或命令
-     * @return 命令列表，如 ["wsl.exe", "sh", "-c", "export PATH=/home/ubuntu/.nvm/versions/node/v24.12.0/bin:$PATH; exec /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude -- \"$@\"", "--"]
+     * @param nodePath WSL 内 node 可执行文件路径或安装目录（自动补全）
+     *                 - 完整路径：/home/ubuntu/.nvm/versions/node/v24.12.0/bin/node
+     *                 - 安装目录：/home/ubuntu/.nvm/versions/node/v24.12.0（自动补全 /bin/node）
+     * @param claudePath WSL 内 claude 安装目录或完整路径（自动补全）
+     *                  - 安装目录：/home/ubuntu/.nvm/versions/node/v24.12.0（自动补全 /bin/claude）
+     *                  - 完整路径：/home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude
+     *                  - 留空：使用全局 claude 命令
+     * @return 命令列表，如 ["wsl.exe", "sh", "-c", "export PATH=/home/ubuntu/.nvm/versions/node/v24.12.0/bin:$PATH; exec /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude -- \"$@\"", "--"]
      */
-    private fun buildWslCommandWithNode(nodePath: String, claudePath: String): List<String> {
-        // 判断 nodePath 是否指向 node 可执行文件
-        val nodeExecPath = if (nodePath.endsWith("/node") || nodePath.endsWith("/node.exe")) {
-            nodePath
+    private fun buildWslCommandWithNode(nodePath: String, claudePath: String?): List<String> {
+        // 规范化 node 路径
+        val nodeExecPath = normalizeWslNodePath(nodePath)
+
+        // 规范化 claude 路径（如果提供）
+        val claudeExecPath = if (claudePath.isNullOrBlank()) {
+            "claude"  // 使用全局命令
         } else {
-            // 如果是 bin 目录，追加 node
-            "${nodePath.trimEnd('/')}/node"
+            normalizeWslClaudePath(claudePath)
         }
 
         // node 可执行文件的 bin 目录（用于设置 PATH）
@@ -736,12 +743,60 @@ class SubprocessTransport(
         // 构建 shell 命令：设置 PATH 后执行 claude
         // 使用 exec 替换 shell 进程，确保信号正确传递
         val shellCommand = """
-            export PATH=$nodeBinDir:'$$'PATH; exec $nodeExecPath $claudePath -- "$$@"
+            export PATH=$nodeBinDir:${'$'}PATH; exec $nodeExecPath $claudeExecPath -- "${'$'}@"
         """.trimIndent().replace("\n", " ")
 
         logger.info("🔧 [WSL] 构建的命令: wsl.exe sh -c '$shellCommand' --")
 
         return listOf("wsl.exe", "sh", "-c", shellCommand, "--")
+    }
+
+    /**
+     * 规范化 WSL Node.js 路径，自动补全为完整可执行文件路径
+     *
+     * @param nodePath 用户配置的路径（可能是安装目录或完整路径）
+     * @return 规范化后的完整可执行文件路径
+     *
+     * 示例：
+     * - /home/ubuntu/.nvm/versions/node/v24.12.0 → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node
+     * - /home/ubuntu/.nvm/versions/node/v24.12.0/bin → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node
+     * - /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node
+     */
+    private fun normalizeWslNodePath(nodePath: String): String {
+        val trimmed = nodePath.trimEnd('/')
+
+        return when {
+            // 已经是完整可执行文件路径
+            trimmed.endsWith("/node") || trimmed.endsWith("/node.exe") -> trimmed
+            // 指向 bin 目录
+            trimmed.endsWith("/bin") -> "$trimmed/node"
+            // 指向安装目录（如 /home/ubuntu/.nvm/versions/node/v24.12.0）
+            else -> "$trimmed/bin/node"
+        }
+    }
+
+    /**
+     * 规范化 WSL Claude 路径，自动补全为完整可执行文件路径
+     *
+     * @param claudePath 用户配置的路径（可能是安装目录或完整路径）
+     * @return 规范化后的完整可执行文件路径
+     *
+     * 示例：
+     * - /home/ubuntu/.nvm/versions/node/v24.12.0 → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude
+     * - /home/ubuntu/.nvm/versions/node/v24.12.0/bin → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude
+     * - /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude
+     */
+    private fun normalizeWslClaudePath(claudePath: String): String {
+        val trimmed = claudePath.trimEnd('/')
+
+        return when {
+            // 已经是完整可执行文件路径
+            trimmed.endsWith("/claude") || trimmed.endsWith("/claude.exe") -> trimmed
+            // 指向 bin 目录
+            trimmed.endsWith("/bin") -> "$trimmed/claude"
+            // 指向安装目录（如 /home/ubuntu/.nvm/versions/node/v24.12.0）
+            else -> "$trimmed/bin/claude"
+        }
     }
 
     /**

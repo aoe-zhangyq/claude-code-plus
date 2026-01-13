@@ -144,7 +144,6 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
     private var defaultBypassPermissionsCheckbox: JBCheckBox? = null
     private var nodePathField: TextFieldWithBrowseButton? = null
     private var wslModeEnabledCheckbox: JBCheckBox? = null
-    private var wslClaudeBridgePathField: TextFieldWithBrowseButton? = null
     private var wslHostIpField: JTextField? = null
     private var wslNodePathField: JTextField? = null
     private var wslClaudePathField: JTextField? = null
@@ -298,34 +297,19 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
         // WSL Node.js 路径
         wslNodePathField = JTextField().apply {
-            toolTipText = "WSL 内 Node.js 可执行文件路径 (如 /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node)"
+            toolTipText = "WSL 内 Node.js 安装路径 (如 /home/ubuntu/.nvm/versions/node/v24.12.0，自动补全 /bin/node)"
             preferredSize = Dimension(450, preferredSize.height)
         }
         panel.add(createLabeledRow("WSL node path:", wslNodePathField!!))
-        panel.add(createDescription("  Path to node executable in WSL. Leave empty to use PATH."))
+        panel.add(createDescription("  Node.js installation directory in WSL (e.g., /home/ubuntu/.nvm/versions/node/v24.12.0)."))
 
         // WSL Claude 路径
         wslClaudePathField = JTextField().apply {
-            toolTipText = "WSL 内 claude 可执行文件路径 (如 /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude)"
+            toolTipText = "WSL 内 claude 安装路径 (如 /home/ubuntu/.nvm/versions/node/v24.12.0，自动补全 /bin/claude，留空使用全局命令)"
             preferredSize = Dimension(450, preferredSize.height)
         }
         panel.add(createLabeledRow("WSL claude path:", wslClaudePathField!!))
-        panel.add(createDescription("  Path to claude executable in WSL. Leave empty to use PATH."))
-
-        // WSL Claude 桥接脚本路径（已废弃）
-        wslClaudeBridgePathField = TextFieldWithBrowseButton().apply {
-            BrowseButtonCompat.addBrowseFolderListener(
-                this,
-                "Select WSL Claude Bridge Script",
-                "Choose the PowerShell script for Claude bridge (e.g., D:\\Tools\\cc.ps1)",
-                null,
-                psDescriptor
-            )
-            toolTipText = "PowerShell script that bridges Claude execution to WSL (deprecated)"
-            preferredSize = Dimension(450, preferredSize.height)
-        }
-        panel.add(createLabeledRow("Claude bridge script (deprecated):", wslClaudeBridgePathField!!))
-        panel.add(createDescription("  Path to PowerShell script (e.g., D:\\Tools\\cc.ps1). Deprecated: use direct WSL execution."))
+        panel.add(createDescription("  Claude installation directory in WSL (same as node path). Leave empty to use global command."))
 
         // WSL 主机 IP
         wslHostIpField = JTextField().apply {
@@ -1020,7 +1004,6 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         val generalModified =
             nodePathField?.text != settings.nodePath ||
             wslModeEnabledCheckbox?.isSelected != settings.wslModeEnabled ||
-            wslClaudeBridgePathField?.text != settings.wslClaudeBridgePath ||
             wslHostIpField?.text != settings.wslHostIp ||
             wslNodePathField?.text != settings.wslNodePath ||
             wslClaudePathField?.text != settings.wslClaudePath ||
@@ -1063,7 +1046,6 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         // General Tab
         settings.nodePath = nodePathField?.text ?: ""
         settings.wslModeEnabled = wslModeEnabledCheckbox?.isSelected ?: false
-        settings.wslClaudeBridgePath = wslClaudeBridgePathField?.text ?: ""
         settings.wslHostIp = wslHostIpField?.text ?: ""
         settings.wslNodePath = wslNodePathField?.text ?: ""
         settings.wslClaudePath = wslClaudePathField?.text ?: ""
@@ -1106,7 +1088,6 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         // General Tab
         nodePathField?.text = settings.nodePath
         wslModeEnabledCheckbox?.isSelected = settings.wslModeEnabled
-        wslClaudeBridgePathField?.text = settings.wslClaudeBridgePath
         wslHostIpField?.text = settings.wslHostIp
         wslNodePathField?.text = settings.wslNodePath
         wslClaudePathField?.text = settings.wslClaudePath

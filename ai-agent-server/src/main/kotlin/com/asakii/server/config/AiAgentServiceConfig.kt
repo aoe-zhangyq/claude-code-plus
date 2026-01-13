@@ -39,10 +39,9 @@ data class ClaudeDefaults(
     val nodePath: String? = null,
     // WSL 模式配置
     val wslModeEnabled: Boolean = false,         // 是否启用 WSL 模式
-    val wslClaudeBridgePath: String? = null,     // WSL Claude 桥接脚本路径（已废弃）
     val wslHostIp: String? = null,               // WSL 主机 IP（如 172.20.160.1），用于从 WSL 访问 Windows 服务
-    val wslNodePath: String? = null,             // WSL 内 Node.js 路径（如 /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node）
-    val wslClaudePath: String? = null,           // WSL 内 claude 路径（如 /home/ubuntu/.nvm/versions/node/v24.12.0/bin/claude）
+    val wslNodePath: String? = null,             // WSL 内 Node.js 安装路径（如 /home/ubuntu/.nvm/versions/node/v24.12.0，代码自动补全 /bin/node）
+    val wslClaudePath: String? = null,           // WSL 内 claude 安装路径（留空使用全局命令）
     // Claude CLI settings.json 路径，null 时不指定（CLI 会自动查找 ~/.claude/settings.json）
     val settings: String? = null,
     // 集成 MCP 服务器启用配置

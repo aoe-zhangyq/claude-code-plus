@@ -814,7 +814,6 @@ class AiAgentRpcServiceImpl(
             nodePath = defaults.nodePath,
             // WSL 模式配置
             wslModeEnabled = defaults.wslModeEnabled,
-            wslClaudeBridgePath = defaults.wslClaudeBridgePath,
             wslHostIp = defaults.wslHostIp,
             wslNodePath = defaults.wslNodePath,
             wslClaudePath = defaults.wslClaudePath,
