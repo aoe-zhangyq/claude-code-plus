@@ -33,6 +33,19 @@ export { ConnectionStatus } from '@/types/display'
 export type { SessionTabInstance } from '@/composables/useSessionTab'
 
 /**
+ * 分屏模式
+ */
+export type SplitMode = 'none' | 'horizontal' | 'vertical'
+
+/**
+ * 分屏面板配置
+ */
+export interface SplitPanel {
+  tabId: string      // 关联的 Tab ID
+  focus: boolean     // 是否获得焦点
+}
+
+/**
  * 获取默认会话设置（动态获取，避免硬编码）
  */
 function getDefaultSessionSettings() {
@@ -72,6 +85,21 @@ export const useSessionStore = defineStore('session', () => {
    * 当前连接状态（独立 ref，解决 shallowRef 内部状态追踪问题）
    */
   const currentConnectionState = ref<ConnectionStatus>(ConnectionStatus.DISCONNECTED)
+
+  /**
+   * 分屏模式
+   */
+  const splitMode = ref<SplitMode>('none')
+
+  /**
+   * 分屏面板列表（最多 2 个）
+   */
+  const splitPanels = ref<SplitPanel[]>([])
+
+  /**
+   * 当前聚焦的面板索引
+   */
+  const focusedPanelIndex = ref(0)
 
   /**
    * displayItems 版本号（解决 shallowRef 内部 reactive 数组变化追踪问题）
@@ -800,6 +828,139 @@ export const useSessionStore = defineStore('session', () => {
     })
   }
 
+  // ========== 分屏功能 ==========
+
+  /**
+   * 设置分屏模式
+   */
+  function setSplitMode(mode: SplitMode): void {
+    splitMode.value = mode
+    if (mode === 'none') {
+      splitPanels.value = []
+      focusedPanelIndex.value = 0
+      // 切换回原来的当前 Tab
+      if (currentTab.value) {
+        currentTab.value.touch()
+      }
+    } else {
+      // 进入分屏模式时，默认使用当前 Tab 作为第一个面板
+      if (currentTab.value) {
+        splitPanels.value = [
+          { tabId: currentTab.value.tabId, focus: true }
+        ]
+        focusedPanelIndex.value = 0
+      }
+    }
+    log.info(`[SessionStore] 分屏模式: ${mode}`)
+  }
+
+  /**
+   * 添加分屏面板（将指定 Tab 加入分屏）
+   */
+  function addSplitPanel(tabId: string): boolean {
+    if (splitMode.value === 'none') {
+      log.warn('[SessionStore] 未开启分屏模式，无法添加面板')
+      return false
+    }
+
+    // 最多 2 个面板
+    if (splitPanels.value.length >= 2) {
+      log.warn('[SessionStore] 已达到最大面板数量')
+      return false
+    }
+
+    // 检查 Tab 是否已在面板中
+    if (splitPanels.value.some(p => p.tabId === tabId)) {
+      log.warn('[SessionStore] Tab 已在分屏中')
+      return false
+    }
+
+    splitPanels.value.push({ tabId, focus: false })
+    log.info(`[SessionStore] 添加分屏面板: ${tabId}`)
+    return true
+  }
+
+  /**
+   * 移除分屏面板
+   */
+  function removeSplitPanel(tabId: string): void {
+    const index = splitPanels.value.findIndex(p => p.tabId === tabId)
+    if (index === -1) return
+
+    splitPanels.value.splice(index, 1)
+
+    // 如果只剩一个面板，退出分屏模式
+    if (splitPanels.value.length <= 1) {
+      setSplitMode('none')
+    } else {
+      // 调整焦点
+      if (focusedPanelIndex.value >= splitPanels.value.length) {
+        focusedPanelIndex.value = splitPanels.value.length - 1
+      }
+    }
+    log.info(`[SessionStore] 移除分屏面板: ${tabId}`)
+  }
+
+  /**
+   * 设置焦点面板
+   */
+  function focusPanel(index: number): void {
+    if (index >= 0 && index < splitPanels.value.length) {
+      // 更新所有面板的焦点状态
+      splitPanels.value.forEach((p, i) => {
+        p.focus = i === index
+      })
+      focusedPanelIndex.value = index
+
+      // 切换 currentTab 到焦点面板对应的 Tab
+      const panel = splitPanels.value[index]
+      const tab = tabs.value.find(t => t.tabId === panel.tabId)
+      if (tab) {
+        currentTab.value = tab
+        currentConnectionState.value = tab.connectionState.status
+      }
+
+      log.debug(`[SessionStore] 焦点面板: ${index}`)
+    }
+  }
+
+  /**
+   * 交换两个分屏面板的位置
+   */
+  function swapSplitPanels(): void {
+    if (splitPanels.value.length !== 2) return
+
+    const [first, second] = splitPanels.value
+    splitPanels.value = [second, first]
+
+    // 更新焦点索引
+    const newFocusIndex = focusedPanelIndex.value === 0 ? 1 : 0
+    focusPanel(newFocusIndex)
+
+    log.info('[SessionStore] 交换分屏面板')
+  }
+
+  /**
+   * 获取焦点面板的 Tab
+   */
+  const focusedPanelTab = computed(() => {
+    if (splitMode.value === 'none' || splitPanels.value.length === 0) {
+      return null
+    }
+    const panel = splitPanels.value[focusedPanelIndex.value]
+    if (!panel) return null
+    return tabs.value.find(t => t.tabId === panel.tabId) || null
+  })
+
+  /**
+   * 获取所有分屏面板的 Tab
+   */
+  const splitPanelTabs = computed(() => {
+    return splitPanels.value
+      .map(p => tabs.value.find(t => t.tabId === p.tabId))
+      .filter((t): t is SessionTabInstance => t !== undefined)
+  })
+
   // ========== 导出 ==========
 
   return {
@@ -874,6 +1035,18 @@ export const useSessionStore = defineStore('session', () => {
 
     // 滚动控制
     switchToBrowseMode,
-    switchToFollowMode
+    switchToFollowMode,
+
+    // 分屏功能
+    splitMode,
+    splitPanels,
+    focusedPanelIndex,
+    focusedPanelTab,
+    splitPanelTabs,
+    setSplitMode,
+    addSplitPanel,
+    removeSplitPanel,
+    focusPanel,
+    swapSplitPanels
   }
 })

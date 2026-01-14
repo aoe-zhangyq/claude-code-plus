@@ -344,5 +344,11 @@ export default {
     cancel: '取消',
     submit: '提交',
     answer: '回答'
+  },
+  split: {
+    addPanel: '添加面板',
+    selectTab: '选择一个会话',
+    swapVertical: '交换面板',
+    swapHorizontal: '交换面板'
   }
 }

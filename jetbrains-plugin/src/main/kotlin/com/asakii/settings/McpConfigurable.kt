@@ -248,18 +248,21 @@ class McpConfigurable(private val project: Project? = null) : SearchableConfigur
         val context7Entry = builtInServers.find { it.name == "Context7 MCP" }
         val terminalEntry = builtInServers.find { it.name == "Terminal MCP" }
         val gitEntry = builtInServers.find { it.name == "JetBrains Git MCP" }
+        val svnEntry = builtInServers.find { it.name == "JetBrains SVN MCP" }
 
         if (userInteractionEntry?.enabled != settings.enableUserInteractionMcp ||
             jetbrainsEntry?.enabled != settings.enableJetBrainsMcp ||
             context7Entry?.enabled != settings.enableContext7Mcp ||
             terminalEntry?.enabled != settings.enableTerminalMcp ||
             gitEntry?.enabled != settings.enableGitMcp ||
+            svnEntry?.enabled != settings.enableSvnMcp ||
             context7Entry?.apiKey != settings.context7ApiKey ||
             userInteractionEntry?.instructions != settings.userInteractionInstructions ||
             jetbrainsEntry?.instructions != settings.jetbrainsInstructions ||
             context7Entry?.instructions != settings.context7Instructions ||
             terminalEntry?.instructions != settings.terminalInstructions ||
             gitEntry?.instructions != settings.gitInstructions ||
+            svnEntry?.instructions != settings.svnInstructions ||
             terminalEntry?.terminalMaxOutputLines != settings.terminalMaxOutputLines ||
             terminalEntry?.terminalMaxOutputChars != settings.terminalMaxOutputChars ||
             terminalEntry?.terminalReadTimeout != settings.terminalReadTimeout
@@ -299,12 +302,15 @@ class McpConfigurable(private val project: Project? = null) : SearchableConfigur
         val context7Entry = builtInServers.find { it.name == "Context7 MCP" }
         val terminalEntry = builtInServers.find { it.name == "Terminal MCP" }
         val gitEntry = builtInServers.find { it.name == "JetBrains Git MCP" }
+        val svnEntry = builtInServers.find { it.name == "JetBrains SVN MCP" }
 
         settings.enableUserInteractionMcp = userInteractionEntry?.enabled ?: true
         settings.enableJetBrainsMcp = jetbrainsEntry?.enabled ?: true
         settings.enableContext7Mcp = context7Entry?.enabled ?: false
         settings.enableGitMcp = gitEntry?.enabled ?: false
         settings.gitInstructions = gitEntry?.instructions ?: ""
+        settings.enableSvnMcp = svnEntry?.enabled ?: false
+        settings.svnInstructions = svnEntry?.instructions ?: ""
         settings.enableTerminalMcp = terminalEntry?.enabled ?: false
         settings.context7ApiKey = context7Entry?.apiKey ?: ""
         settings.userInteractionInstructions = userInteractionEntry?.instructions ?: ""
@@ -430,6 +436,15 @@ class McpConfigurable(private val project: Project? = null) : SearchableConfigur
             isBuiltIn = true,
             instructions = settings.gitInstructions,
             defaultInstructions = McpDefaults.getGitInstructions(language)
+        ))
+        builtInServers.add(McpServerEntry(
+            name = "JetBrains SVN MCP",
+            enabled = settings.enableSvnMcp,
+            level = McpServerLevel.BUILTIN,
+            configSummary = "SVN integration and commit message generation",
+            isBuiltIn = true,
+            instructions = settings.svnInstructions,
+            defaultInstructions = McpDefaults.getSvnInstructions(language)
         ))
 
         // 加载自定义服务器

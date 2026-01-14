@@ -343,5 +343,11 @@ export default {
     cancel: 'Cancel',
     submit: 'Submit',
     answer: 'Answer'
+  },
+  split: {
+    addPanel: 'Add panel',
+    selectTab: 'Select a session',
+    swapVertical: 'Swap panels',
+    swapHorizontal: 'Swap panels'
   }
 }

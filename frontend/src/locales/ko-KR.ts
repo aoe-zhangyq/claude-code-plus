@@ -307,5 +307,11 @@ export default {
     compact: '현재 세션 컨텍스트 압축',
     context: '현재 세션 컨텍스트 정보 표시',
     rename: '현재 세션 이름 변경'
+  },
+  split: {
+    addPanel: '패널 추가',
+    selectTab: '세션 선택',
+    swapVertical: '패널 교체',
+    swapHorizontal: '패널 교체'
   }
 }
