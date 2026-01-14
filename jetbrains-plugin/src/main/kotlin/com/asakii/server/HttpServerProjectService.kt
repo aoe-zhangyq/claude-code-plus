@@ -176,7 +176,6 @@ class HttpServerProjectService(private val project: Project) : Disposable {
                         nodePath = settings.nodePath.takeIf { it.isNotBlank() },
                         wslModeEnabled = settings.wslModeEnabled,
                         wslHostIp = settings.wslHostIp.takeIf { it.isNotBlank() },
-                        wslNodePath = settings.wslNodePath.takeIf { it.isNotBlank() },
                         permissionMode = settings.permissionMode.takeIf { it.isNotBlank() && it != "default" },
                         includePartialMessages = settings.includePartialMessages,
                         enableUserInteractionMcp = settings.enableUserInteractionMcp,

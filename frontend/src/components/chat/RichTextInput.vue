@@ -244,7 +244,7 @@ const editor = useEditor({
     attributes: {
       class: 'prose-editor',
     },
-    handleClick(_view, _pos, event) {
+    handleClick(view, pos, event) {
       const target = event.target as HTMLElement
 
       // 检查点击的是否是图片 - 打开预览
@@ -266,7 +266,15 @@ const editor = useEditor({
         }
       }
 
-      return false
+      // 普通文本区域点击 - 明确设置光标到点击位置
+      // 使用 TextSelection 确保光标正确定位到点击位置，而不是文档末尾
+      const { state, dispatch } = view
+      const { tr, selection } = state
+      const newSelection = selection.constructor.near(state.doc.resolve(pos))
+      const transaction = tr.setSelection(newSelection)
+      dispatch(transaction)
+
+      return true
     },
     handleKeyDown(_view, event) {
       // 传递键盘事件给父组件

@@ -1,0 +1,55 @@
+# Auto detect text files and normalize line endings to LF
+* text=auto eol=lf
+
+# Source code files
+*.c text diff
+*.h text diff
+*.kt text diff
+*.java text diff
+*.js text diff
+*.ts text diff
+*.tsx text diff
+*.vue text diff
+*.json text diff
+*.xml text diff
+*.yaml text diff
+*.yml text diff
+*.md text diff
+*.sh text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Build scripts
+gradlew text eol=lf
+gradlew.bat text eol=crlf
+
+# Protobuf files
+*.proto text diff
+
+# SVG files (should be treated as binary to avoid corruption)
+*.svg binary
+
+# Image files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+
+# Font files
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+
+# Archives
+*.zip binary
+*.jar binary
+*.tar.gz binary
+*.7z binary
+
+# Other binary files
+*.pdf binary
+*.class binary
+*.dex binary

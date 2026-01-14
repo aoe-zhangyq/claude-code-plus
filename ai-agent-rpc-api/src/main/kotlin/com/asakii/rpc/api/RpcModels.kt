@@ -722,3 +722,27 @@ data class RpcAvailableModelsResult(
     val models: List<RpcModelInfo>,
     val defaultModelId: String  // 当前默认模型的 id
 )
+
+// ============================================================================
+// 用户交互相关
+// ============================================================================
+
+/**
+ * 用户问题（用于 AskUserQuestion 工具）
+ */
+@Serializable
+data class JetBrainsQuestion(
+    val question: String,
+    val header: String? = null,
+    val multiSelect: Boolean = false,
+    val options: List<JetBrainsQuestionOption>
+)
+
+/**
+ * 用户问题选项
+ */
+@Serializable
+data class JetBrainsQuestionOption(
+    val label: String,
+    val description: String? = null
+)
