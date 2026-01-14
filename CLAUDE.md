@@ -1,5 +1,6 @@
 特别提醒：请使用简体中文进行交流
 特别提醒：git commit、changelog 不使用中文，而是使用英文
+特别提醒：Git Generate 提示词跟随 Prompt Language 设置（中文环境使用中文提示词，生成的 commit message 仍为英文）
 
 # Claude Code Plus - 架构说明
 

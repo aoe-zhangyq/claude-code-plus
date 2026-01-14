@@ -19,7 +19,7 @@ class ClaudeCodePlusConfigurable : SearchableConfigurable {
 
     override fun getId(): String = "com.asakii.settings"
 
-    override fun getDisplayName(): String = "Claude Code Plus"
+    override fun getDisplayName(): String = "Claude Code Plus [AOE]"
 
     override fun createComponent(): JComponent {
         mainPanel = JPanel(BorderLayout())
@@ -29,7 +29,7 @@ class ClaudeCodePlusConfigurable : SearchableConfigurable {
         contentPanel.layout = BoxLayout(contentPanel, BoxLayout.Y_AXIS)
 
         // 标题
-        val titleLabel = JBLabel("<html><h2>Claude Code Plus</h2></html>")
+        val titleLabel = JBLabel("<html><h2>Claude Code Plus [AOE]</h2></html>")
         titleLabel.alignmentX = JPanel.LEFT_ALIGNMENT
         contentPanel.add(titleLabel)
         contentPanel.add(Box.createVerticalStrut(20))
@@ -38,7 +38,7 @@ class ClaudeCodePlusConfigurable : SearchableConfigurable {
         val descriptionLabel = JBLabel("""
             <html>
             <body style='width: 500px'>
-            <p>Welcome to Claude Code Plus settings!</p>
+            <p>Welcome to Claude Code Plus [AOE] settings!</p>
             <br>
             <p>Configure the plugin using the sub-pages:</p>
             <ul>

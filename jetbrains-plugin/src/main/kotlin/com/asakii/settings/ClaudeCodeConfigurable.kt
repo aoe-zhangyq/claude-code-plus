@@ -142,6 +142,7 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
     // General Tab 组件
     private var defaultBypassPermissionsCheckbox: JBCheckBox? = null
+    private var promptLanguageCombo: ComboBox<String>? = null
     private var nodePathField: TextFieldWithBrowseButton? = null
     private var wslModeEnabledCheckbox: JBCheckBox? = null
     private var wslHostIpField: JTextField? = null
@@ -214,7 +215,21 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
         panel.border = JBUI.Borders.empty(8, 10, 8, 10)
 
-        // === 默认权限设置（放在最前面）===
+        // === 提示词语言设置 ===
+        panel.add(createSectionTitle("Prompt Language"))
+        panel.add(createDescription("Select the language for default system prompts."))
+
+        promptLanguageCombo = ComboBox(DefaultComboBoxModel(arrayOf(
+            "中文 (Chinese)", "English"
+        ))).apply {
+            toolTipText = "Language for default MCP and agent prompts"
+        }
+        panel.add(createLabeledRow("Language:", promptLanguageCombo!!))
+        panel.add(createDescription("  中文 = 中文提示词 | English = English prompts"))
+        panel.add(Box.createVerticalStrut(8))
+
+        // === 默认权限设置 ===
+        panel.add(createSeparator())
         panel.add(createSectionTitle("Default Permissions"))
         panel.add(createDescription("Configure default permission behavior for new sessions."))
 
@@ -978,6 +993,10 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
     override fun isModified(): Boolean {
         val settings = AgentSettingsService.getInstance()
 
+        // 提示词语言检查
+        val currentLanguage = if (promptLanguageCombo?.selectedItem == "中文 (Chinese)") "zh" else "en"
+        val languageModified = currentLanguage != settings.promptLanguage
+
         // General Tab - 默认模型检查
         val selectedModel = defaultModelCombo?.selectedItem as? ModelInfo
         val savedDefaultModel = settings.defaultModel
@@ -993,6 +1012,7 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
         // General Tab
         val generalModified =
+            languageModified ||
             nodePathField?.text != settings.nodePath ||
             wslModeEnabledCheckbox?.isSelected != settings.wslModeEnabled ||
             wslHostIpField?.text != settings.wslHostIp ||
@@ -1032,6 +1052,10 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
     override fun apply() {
         val settings = AgentSettingsService.getInstance()
+
+        // General Tab - 提示词语言
+        val selectedLanguage = if (promptLanguageCombo?.selectedItem == "中文 (Chinese)") "zh" else "en"
+        settings.promptLanguage = selectedLanguage
 
         // General Tab
         settings.nodePath = nodePathField?.text ?: ""
@@ -1073,6 +1097,10 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
     override fun reset() {
         val settings = AgentSettingsService.getInstance()
+
+        // General Tab - 提示词语言
+        val languageDisplay = if (settings.promptLanguage == "zh") "中文 (Chinese)" else "English"
+        promptLanguageCombo?.selectedItem = languageDisplay
 
         // General Tab
         nodePathField?.text = settings.nodePath
@@ -1137,6 +1165,7 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
     }
 
     override fun disposeUIResources() {
+        promptLanguageCombo = null
         nodePathField = null
         wslModeEnabledCheckbox = null
         wslHostIpField = null

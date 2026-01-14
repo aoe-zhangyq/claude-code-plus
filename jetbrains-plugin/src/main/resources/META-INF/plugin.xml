@@ -1,6 +1,6 @@
 <idea-plugin require-restart="false">
-    <id>com.claudecodeplus</id>
-    <name>Claude Code Plus</name>
+    <id>com.claudecodeplus.aoe</id>
+    <name>Claude Code Plus [AOE]</name>
     <vendor email="liuxiongfenglove@gmail.com" url="https://github.com/touwaeriol/claude-code-plus">Claude Code Plus Team</vendor>
 
     <!-- version is set from gradle.properties via pluginVersion -->
@@ -54,7 +54,7 @@
     
     <extensions defaultExtensionNs="com.intellij">
         <!-- Native Swing UI Tool Window -->
-        <toolWindow id="Claude Code Plus"
+        <toolWindow id="Claude Code Plus [AOE]"
                     anchor="right"
                     icon="/icons/claude-code-simple.svg"
                     factoryClass="com.asakii.plugin.ui.NativeToolWindowFactory"/>
@@ -71,7 +71,7 @@
             parentId="tools"
             instance="com.asakii.settings.ClaudeCodePlusConfigurable"
             id="com.asakii.settings"
-            displayName="Claude Code Plus"/>
+            displayName="Claude Code Plus [AOE]"/>
 
         <!-- MCP Settings (child of Claude Code Plus) -->
         <applicationConfigurable
@@ -111,7 +111,7 @@
             implementation="com.asakii.plugin.listeners.ClaudeToolWindowListener"/>
         
         <!-- Notification Group -->
-        <notificationGroup id="Claude Code Plus Notifications"
+        <notificationGroup id="Claude Code Plus [AOE] Notifications"
                           displayType="BALLOON"
                           isLogByDefault="true"/>
 

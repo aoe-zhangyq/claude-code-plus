@@ -372,6 +372,9 @@ class McpConfigurable(private val project: Project? = null) : SearchableConfigur
         val settings = AgentSettingsService.getInstance()
         val mcpSettings = service<McpSettingsService>()
 
+        // 根据提示词语言设置获取对应的默认提示词
+        val language = settings.promptLanguage
+
         // 加载内置服务器
         builtInServers.clear()
         builtInServers.add(McpServerEntry(
@@ -381,7 +384,7 @@ class McpConfigurable(private val project: Project? = null) : SearchableConfigur
             configSummary = "Allows Claude to ask questions",
             isBuiltIn = true,
             instructions = settings.userInteractionInstructions,
-            defaultInstructions = McpDefaults.USER_INTERACTION_INSTRUCTIONS
+            defaultInstructions = McpDefaults.getUserInteractionInstructions(language)
         ))
         builtInServers.add(McpServerEntry(
             name = "JetBrains IDE MCP",
@@ -390,7 +393,7 @@ class McpConfigurable(private val project: Project? = null) : SearchableConfigur
             configSummary = "Code search, file indexing",
             isBuiltIn = true,
             instructions = settings.jetbrainsInstructions,
-            defaultInstructions = McpDefaults.JETBRAINS_INSTRUCTIONS,
+            defaultInstructions = McpDefaults.getJetbrainsInstructions(language),
             disabledTools = listOf("Glob", "Grep")
         ))
         builtInServers.add(McpServerEntry(
@@ -401,7 +404,7 @@ class McpConfigurable(private val project: Project? = null) : SearchableConfigur
             isBuiltIn = true,
             instructions = settings.context7Instructions,
             apiKey = settings.context7ApiKey,
-            defaultInstructions = McpDefaults.CONTEXT7_INSTRUCTIONS
+            defaultInstructions = McpDefaults.getContext7Instructions(language)
         ))
         builtInServers.add(McpServerEntry(
             name = "Terminal MCP",
@@ -410,7 +413,7 @@ class McpConfigurable(private val project: Project? = null) : SearchableConfigur
             configSummary = "IDEA integrated terminal",
             isBuiltIn = true,
             instructions = settings.terminalInstructions,
-            defaultInstructions = McpDefaults.TERMINAL_INSTRUCTIONS,
+            defaultInstructions = McpDefaults.getTerminalInstructions(language),
             disabledTools = if (settings.terminalDisableBuiltinBash) listOf("Bash") else emptyList(),
             hasDisableToolsToggle = true,
             terminalMaxOutputLines = settings.terminalMaxOutputLines,
@@ -426,7 +429,7 @@ class McpConfigurable(private val project: Project? = null) : SearchableConfigur
             configSummary = "VCS integration and commit message generation",
             isBuiltIn = true,
             instructions = settings.gitInstructions,
-            defaultInstructions = McpDefaults.GIT_INSTRUCTIONS
+            defaultInstructions = McpDefaults.getGitInstructions(language)
         ))
 
         // 加载自定义服务器

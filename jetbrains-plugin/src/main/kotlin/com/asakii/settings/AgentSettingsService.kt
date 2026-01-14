@@ -92,6 +92,9 @@ data class ModelInfo(
 class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State> {
 
     data class State(
+        // 提示词语言配置（zh=中文，en=英文）
+        var promptLanguage: String = "zh",
+
         // MCP 服务器启用配置
         var enableUserInteractionMcp: Boolean = true,  // 用户交互 MCP（AskUserQuestion 工具）
         var enableJetBrainsMcp: Boolean = true,        // JetBrains IDE MCP（IDE 索引工具）
@@ -192,6 +195,10 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
     }
 
     // ==================== 便捷属性 ====================
+
+    var promptLanguage: String
+        get() = state.promptLanguage
+        set(value) { state.promptLanguage = value }
 
     var enableUserInteractionMcp: Boolean
         get() = state.enableUserInteractionMcp
@@ -402,11 +409,15 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     /** 获取生效的 Git Generate 系统提示词（自定义或默认） */
     val effectiveGitGenerateSystemPrompt: String
-        get() = state.gitGenerateSystemPrompt.ifBlank { GitGenerateDefaults.SYSTEM_PROMPT }
+        get() = state.gitGenerateSystemPrompt.ifBlank {
+            GitGenerateDefaults.getSystemPrompt(state.promptLanguage)
+        }
 
     /** 获取生效的 Git Generate 用户提示词（自定义或默认） */
     val effectiveGitGenerateUserPrompt: String
-        get() = state.gitGenerateUserPrompt.ifBlank { GitGenerateDefaults.USER_PROMPT }
+        get() = state.gitGenerateUserPrompt.ifBlank {
+            GitGenerateDefaults.getUserPrompt(state.promptLanguage)
+        }
 
     /** 获取生效的 Git Generate 工具列表（自定义或默认） */
     val effectiveGitGenerateTools: List<String>
@@ -439,23 +450,33 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     /** 获取生效的 User Interaction MCP 提示词（自定义或默认） */
     val effectiveUserInteractionInstructions: String
-        get() = state.userInteractionInstructions.ifBlank { McpDefaults.USER_INTERACTION_INSTRUCTIONS }
+        get() = state.userInteractionInstructions.ifBlank {
+            McpDefaults.getUserInteractionInstructions(state.promptLanguage)
+        }
 
     /** 获取生效的 JetBrains MCP 提示词（自定义或默认） */
     val effectiveJetbrainsInstructions: String
-        get() = state.jetbrainsInstructions.ifBlank { McpDefaults.JETBRAINS_INSTRUCTIONS }
+        get() = state.jetbrainsInstructions.ifBlank {
+            McpDefaults.getJetbrainsInstructions(state.promptLanguage)
+        }
 
     /** 获取生效的 Context7 MCP 提示词（自定义或默认） */
     val effectiveContext7Instructions: String
-        get() = state.context7Instructions.ifBlank { McpDefaults.CONTEXT7_INSTRUCTIONS }
+        get() = state.context7Instructions.ifBlank {
+            McpDefaults.getContext7Instructions(state.promptLanguage)
+        }
 
     /** 获取生效的 Terminal MCP 提示词（自定义或默认） */
     val effectiveTerminalInstructions: String
-        get() = state.terminalInstructions.ifBlank { McpDefaults.TERMINAL_INSTRUCTIONS }
+        get() = state.terminalInstructions.ifBlank {
+            McpDefaults.getTerminalInstructions(state.promptLanguage)
+        }
 
     /** 获取生效的 Git MCP 提示词（自定义或默认） */
     val effectiveGitInstructions: String
-        get() = state.gitInstructions.ifBlank { McpDefaults.GIT_INSTRUCTIONS }
+        get() = state.gitInstructions.ifBlank {
+            McpDefaults.getGitInstructions(state.promptLanguage)
+        }
 
     // Agent 配置
     var customAgents: String

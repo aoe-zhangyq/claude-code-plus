@@ -68,8 +68,9 @@ class GenerateCommitMessageService(private val project: Project) {
             val gitMcpServer = GitMcpServerImpl(project)
 
             // 获取配置的提示词和工具列表
-            val configuredSystemPrompt = settings.gitGenerateSystemPrompt.ifBlank { GitGenerateDefaults.SYSTEM_PROMPT }
-            val configuredUserPrompt = settings.gitGenerateUserPrompt.ifBlank { GitGenerateDefaults.USER_PROMPT }
+            val promptLanguage = settings.promptLanguage
+            val configuredSystemPrompt = settings.gitGenerateSystemPrompt.ifBlank { GitGenerateDefaults.getSystemPrompt(promptLanguage) }
+            val configuredUserPrompt = settings.gitGenerateUserPrompt.ifBlank { GitGenerateDefaults.getUserPrompt(promptLanguage) }
             val configuredTools = settings.getGitGenerateTools().takeIf { it.isNotEmpty() } ?: GitGenerateDefaults.TOOLS
 
             // 获取配置的模型（带 fallback）
@@ -243,7 +244,7 @@ class GenerateCommitMessageService(private val project: Project) {
 
     private fun showNotification(content: String, type: NotificationType) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("Claude Code Plus Notifications")
+            .getNotificationGroup("Claude Code Plus [AOE] Notifications")
             .createNotification(content, type)
             .notify(project)
     }

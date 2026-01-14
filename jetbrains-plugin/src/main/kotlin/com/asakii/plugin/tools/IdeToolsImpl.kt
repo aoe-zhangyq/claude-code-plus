@@ -483,14 +483,15 @@ class IdeToolsImpl(
             return emptyMap()
         }
 
-        val defaultAgent = AgentDefaults.EXPLORE_WITH_JETBRAINS
+        // 根据提示词语言设置获取对应的 Agent 配置
+        val defaultAgent = AgentDefaults.getExploreWithJetbrainsConfig(settings.promptLanguage)
         val agentDef = AgentDefinition(
             description = defaultAgent.description,
             prompt = defaultAgent.prompt,
             tools = defaultAgent.tools,
             model = null // 使用默认模型
         )
-        logger.info("📦 Using default agent: ${defaultAgent.name}")
+        logger.info("📦 Using default agent: ${defaultAgent.name} (language: ${settings.promptLanguage})")
         return mapOf(defaultAgent.name to agentDef)
     }
 

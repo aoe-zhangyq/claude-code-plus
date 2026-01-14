@@ -84,11 +84,11 @@ class IdeaIdeIntegration(
             }
 
             val notificationGroup = com.intellij.notification.NotificationGroupManager.getInstance()
-                .getNotificationGroup("Claude Code Plus")
+                .getNotificationGroup("Claude Code Plus [AOE]")
 
             if (notificationGroup != null) {
                 val notification = notificationGroup.createNotification(
-                    "Claude Code Plus",
+                    "Claude Code Plus [AOE]",
                     message,
                     intellijType
                 )
@@ -96,8 +96,8 @@ class IdeaIdeIntegration(
             } else {
                 // Fallback: 直接创建通知（无分组）
                 val notification = com.intellij.notification.Notification(
-                    "Claude Code Plus",
-                    "Claude Code Plus",
+                    "Claude Code Plus [AOE]",
+                    "Claude Code Plus [AOE]",
                     message,
                     intellijType
                 )

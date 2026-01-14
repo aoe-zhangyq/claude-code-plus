@@ -207,8 +207,10 @@ class GitGenerateConfigurable : SearchableConfigurable {
             toolTipText = "Reset all fields to their default values"
         }
         resetButton.addActionListener {
-            systemPromptArea?.text = GitGenerateDefaults.SYSTEM_PROMPT
-            userPromptArea?.text = GitGenerateDefaults.USER_PROMPT
+            val settings = AgentSettingsService.getInstance()
+            val language = settings.promptLanguage
+            systemPromptArea?.text = GitGenerateDefaults.getSystemPrompt(language)
+            userPromptArea?.text = GitGenerateDefaults.getUserPrompt(language)
             setTools(GitGenerateDefaults.TOOLS)
         }
         buttonPanel.add(resetButton)
@@ -299,8 +301,9 @@ class GitGenerateConfigurable : SearchableConfigurable {
     override fun isModified(): Boolean {
         val settings = AgentSettingsService.getInstance()
 
-        val effectiveSystemPrompt = settings.gitGenerateSystemPrompt.ifBlank { GitGenerateDefaults.SYSTEM_PROMPT }
-        val effectiveUserPrompt = settings.gitGenerateUserPrompt.ifBlank { GitGenerateDefaults.USER_PROMPT }
+        val language = settings.promptLanguage
+        val effectiveSystemPrompt = settings.gitGenerateSystemPrompt.ifBlank { GitGenerateDefaults.getSystemPrompt(language) }
+        val effectiveUserPrompt = settings.gitGenerateUserPrompt.ifBlank { GitGenerateDefaults.getUserPrompt(language) }
         val effectiveTools = settings.getGitGenerateTools().takeIf { it.isNotEmpty() } ?: GitGenerateDefaults.TOOLS
 
         // 检查模型是否修改
@@ -345,8 +348,9 @@ class GitGenerateConfigurable : SearchableConfigurable {
     override fun reset() {
         val settings = AgentSettingsService.getInstance()
 
-        systemPromptArea?.text = settings.gitGenerateSystemPrompt.ifBlank { GitGenerateDefaults.SYSTEM_PROMPT }
-        userPromptArea?.text = settings.gitGenerateUserPrompt.ifBlank { GitGenerateDefaults.USER_PROMPT }
+        val language = settings.promptLanguage
+        systemPromptArea?.text = settings.gitGenerateSystemPrompt.ifBlank { GitGenerateDefaults.getSystemPrompt(language) }
+        userPromptArea?.text = settings.gitGenerateUserPrompt.ifBlank { GitGenerateDefaults.getUserPrompt(language) }
         setTools(settings.getGitGenerateTools().takeIf { it.isNotEmpty() } ?: GitGenerateDefaults.TOOLS)
         saveSessionCheckbox?.isSelected = settings.gitGenerateSaveSession
 

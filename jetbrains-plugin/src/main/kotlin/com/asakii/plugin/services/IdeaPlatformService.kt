@@ -62,7 +62,7 @@ class IdeaPlatformService(private val project: Project) {
 
         private val logger = Logger.getInstance(IdeaPlatformService::class.java)
 
-        private const val NOTIFICATION_GROUP_ID = "Claude Code Plus"
+        private const val NOTIFICATION_GROUP_ID = "Claude Code Plus [AOE]"
 
     }
 
@@ -563,7 +563,7 @@ class IdeaPlatformService(private val project: Project) {
 
             val notification = notificationGroup.createNotification(
 
-                "Claude Code Plus",
+                "Claude Code Plus [AOE]",
 
                 message,
 
