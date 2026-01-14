@@ -710,55 +710,6 @@ class SubprocessTransport(
 
         return command
     }
-    
-    /**
-     * 构建通过指定 node 执行 claude 的 WSL 命令
-     *
-     * @param nodePath WSL 内 Node.js 安装目录（自动补全为 bin 目录并添加到 PATH）
-     *                 - 安装目录：/home/ubuntu/.nvm/versions/node/v24.12.0
-     *                 - bin 目录：/home/ubuntu/.nvm/versions/node/v24.12.0/bin
-     *                 - 完整路径：/home/ubuntu/.nvm/versions/node/v24.12.0/bin/node
-     * @param claudeCommand claude 命令名称（通常就是 "claude"）
-     * @return 命令列表，如 ["wsl.exe", "sh", "-c", "export PATH=/home/ubuntu/.nvm/versions/node/v24.12.0/bin:$PATH; exec node claude -- \"$@\"", "--"]
-     */
-    private fun buildWslCommandWithNode(nodePath: String, claudeCommand: String): List<String> {
-        // 规范化 node 路径，获取 bin 目录
-        val nodeExecPath = normalizeWslNodePath(nodePath)
-        val nodeBinDir = nodeExecPath.substringBeforeLast("/")
-
-        // 构建 shell 命令：设置 PATH 后，直接调用 claude
-        // 注意：使用 "$@" 而不是 "${$@}"，后者会导致 bash 语法错误（bad substitution）
-        val shellCommand = "claude"
-
-        logger.info("🔧 [WSL] 构建的命令: wsl $shellCommand")
-
-        // 使用 bash 而不是 sh
-        return listOf("wsl", shellCommand)
-    }
-
-    /**
-     * 规范化 WSL Node.js 路径，自动补全为完整可执行文件路径
-     *
-     * @param nodePath 用户配置的路径（可能是安装目录或完整路径）
-     * @return 规范化后的完整可执行文件路径
-     *
-     * 示例：
-     * - /home/ubuntu/.nvm/versions/node/v24.12.0 → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node
-     * - /home/ubuntu/.nvm/versions/node/v24.12.0/bin → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node
-     * - /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node → /home/ubuntu/.nvm/versions/node/v24.12.0/bin/node
-     */
-    private fun normalizeWslNodePath(nodePath: String): String {
-        val trimmed = nodePath.trimEnd('/')
-
-        return when {
-            // 已经是完整可执行文件路径
-            trimmed.endsWith("/node") || trimmed.endsWith("/node.exe") -> trimmed
-            // 指向 bin 目录
-            trimmed.endsWith("/bin") -> "$trimmed/node"
-            // 指向安装目录（如 /home/ubuntu/.nvm/versions/node/v24.12.0）
-            else -> "$trimmed/bin/node"
-        }
-    }
 
     /**
      * Find the Claude executable in the system.
@@ -771,17 +722,9 @@ class SubprocessTransport(
         // 0. WSL 模式（最高优先级）
         if (options.wslModeEnabled) {
             logger.info("✅ 使用 WSL 模式运行 Claude CLI")
-
-            // 如果配置了 wslNodePath（bin 目录），使用它来执行 claude
-            options.wslNodePath?.let { nodePath ->
-                logger.info("✅ [WSL] 使用配置的 node 路径: $nodePath")
-                // nodePath 指向 bin 目录，通过 node 执行 claude
-                return buildWslCommandWithNode(nodePath, "claude")
-            }
-
-            // 默认：使用 wsl.exe 执行 claude（依赖 WSL PATH）
+            // 使用 wsl.exe 执行 claude（依赖 WSL PATH）
             logger.info("✅ [WSL] 使用默认 claude 命令（依赖 WSL PATH）")
-            return listOf("wsl.exe", "claude", "--")
+            return listOf("wsl", "claude")
         }
 
         // 1. 用户指定路径
