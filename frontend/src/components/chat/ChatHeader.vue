@@ -155,16 +155,8 @@ async function handleCloseTab(tabId: string) {
 }
 
 async function handleNewSession() {
-  // 如果当前正在生成中或正在连接中，新建一个新的 Tab
-  // 如果没有正在生成中且已完成连接，直接清空当前 Tab 变成空的新会话
-  // 注意：直接从 Tab 实例读取状态，避免 shallowRef 响应性问题
-  const isCurrentGenerating = sessionStore.currentTab?.isGenerating.value ?? false
-  const isCurrentConnecting = sessionStore.currentTab?.connectionState.status === ConnectionStatus.CONNECTING
-  if (isCurrentGenerating || isCurrentConnecting) {
-    await sessionStore.createTab()
-  } else {
-    await sessionStore.resetCurrentTab()
-  }
+  // 始终创建新 Tab，不覆盖已结束的会话
+  await sessionStore.createTab()
 }
 
 function handleReorder(newOrder: string[]) {
