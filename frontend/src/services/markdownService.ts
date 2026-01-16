@@ -5,6 +5,10 @@
 
 import MarkdownIt from 'markdown-it'
 
+// 占位符，用于保护代码块内部的 ``` 标记
+// 使用空字符 (\x00) 确保不会与正常内容冲突
+const CODE_BLOCK_DELIMITER = '\x00__CODE_BLOCK_DELIMITER__\x00'
+
 class MarkdownService {
   private md: MarkdownIt
 
@@ -21,9 +25,43 @@ class MarkdownService {
 
   /**
    * 渲染 Markdown 为 HTML
+   * 预处理：保护代码块内部的 ``` 标记，避免解析截断
    */
   render(markdown: string): string {
-    return this.md.render(markdown)
+    const preprocessed = this.protectNestedCodeBlocks(markdown)
+    const html = this.md.render(preprocessed)
+    return this.restoreCodeBlockDelimiters(html)
+  }
+
+  /**
+   * 预处理：保护代码块内部的 ``` 标记
+   *
+   * 策略：
+   * 1. 检测代码块边界 ```lang ... ```
+   * 2. 将代码块内部的 ``` 替换为占位符
+   * 3. 这样 markdown-it 就不会误将内部的 ``` 当作结束标记
+   *
+   * 注意：必须匹配完整的代码块，避免部分匹配
+   */
+  private protectNestedCodeBlocks(markdown: string): string {
+    // 匹配代码块：```lang\ncontent\n```
+    // 使用非贪婪匹配 + 不可回溯原子组避免过度匹配
+    const fencePattern = /```(\w*)\n([\s\S]*?)```/g
+
+    return markdown.replace(fencePattern, (match, lang, content) => {
+      // 将代码块内容中的 ``` 替换为占位符
+      // 使用全局替换，因为可能有多个嵌套的标记
+      const protectedContent = content.replace(/```/g, CODE_BLOCK_DELIMITER)
+      return `\`\`\`${lang}\n${protectedContent}\`\`\``
+    })
+  }
+
+  /**
+   * 后处理：还原代码块内容中的 ``` 标记
+   * 在 HTML 输出中将占位符还原为 ```
+   */
+  private restoreCodeBlockDelimiters(html: string): string {
+    return html.replace(new RegExp(CODE_BLOCK_DELIMITER, 'g'), '```')
   }
 
   /**

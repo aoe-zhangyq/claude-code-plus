@@ -38,49 +38,32 @@ object ClaudeSessionScanner {
     }
 
     /**
-     * 选择最佳的项目目录（支持 WSL 兼容）
+     * 获取所有可能的项目目录（支持 WSL 兼容）
      *
-     * 当检测到 WSL 路径时，会同时检查 Windows 和 WSL 两种可能的目录，
-     * 选择修改时间最新的目录。这样可以兼容使用 Windows 版 Claude CLI 和
-     * WSL 版 Claude CLI 创建的历史文件。
+     * 当检测到 WSL 路径时，会同时返回 Windows 和 WSL 两种可能的目录，
+     * 这样可以同时加载使用 Windows 版 Claude CLI 和 WSL 版 Claude CLI 创建的历史文件。
      *
      * @param claudeDir Claude 配置目录（通常是 ~/.claude）
      * @param projectPath 项目路径
-     * @return 最佳的项目目录，如果都不存在则返回 null
+     * @return 所有有效的项目目录列表
      */
-    private fun selectBestProjectDirectory(claudeDir: File, projectPath: String): File? {
+    private fun getAllProjectDirectories(claudeDir: File, projectPath: String): List<File> {
         val possibleDirNames = ProjectPathUtils.getPossibleDirectoryNames(projectPath)
-
-        if (possibleDirNames.size == 1) {
-            // 非 WSL 路径，直接返回单个目录
-            val dir = File(claudeDir, "projects/${possibleDirNames[0]}")
-            return if (dir.exists() && dir.isDirectory) dir else null
-        }
-
-        // WSL 路径，检查所有可能的目录，选择修改时间最新的
-        var bestDir: File? = null
-        var bestModifiedTime = 0L
+        val result = mutableListOf<File>()
 
         for (dirName in possibleDirNames) {
             val dir = File(claudeDir, "projects/$dirName")
             if (dir.exists() && dir.isDirectory) {
-                val dirModifiedTime = dir.lastModified()
-                logger.info("[SessionScanner] 候选目录: ${dir.absolutePath}, 修改时间: $dirModifiedTime")
-
-                if (dirModifiedTime > bestModifiedTime) {
-                    bestDir = dir
-                    bestModifiedTime = dirModifiedTime
-                }
+                logger.info("[SessionScanner] 找到目录: ${dir.absolutePath}")
+                result.add(dir)
             }
         }
 
-        if (bestDir != null) {
-            logger.info("[SessionScanner] 选择目录: ${bestDir.absolutePath}")
-        } else {
+        if (result.isEmpty()) {
             logger.info("[SessionScanner] 未找到有效的项目目录，候选目录名: $possibleDirNames")
         }
 
-        return bestDir
+        return result
     }
 
     /**
@@ -92,25 +75,33 @@ object ClaudeSessionScanner {
      *
      * 优化策略：分批扫描，每次扫描10个文件，找到足够的有效会话后提前返回
      *
-     * WSL 兼容：当检测到 WSL 路径时，会同时检查 Windows 和 WSL 两种可能的目录，
-     * 选择修改时间最新的目录进行扫描。
+     * WSL 兼容：当检测到 WSL 路径时，会同时扫描 Windows 和 WSL 两种可能的目录，
+     * 合并两个目录中的所有会话文件。
      */
     fun scanHistorySessions(projectPath: String, maxResults: Int, offset: Int = 0): List<SessionMetadata> {
         val claudeDir = getClaudeDir()
-        val projectDir = selectBestProjectDirectory(claudeDir, projectPath)
+        val projectDirs = getAllProjectDirectories(claudeDir, projectPath)
 
-        if (projectDir == null) {
+        if (projectDirs.isEmpty()) {
             logger.info("[SessionScanner] 项目目录不存在: $projectPath")
             return emptyList()
         }
 
-        logger.info("[SessionScanner] 使用目录: ${projectDir.absolutePath}")
+        logger.info("[SessionScanner] 找到 ${projectDirs.size} 个项目目录: ${projectDirs.map { it.absolutePath }}")
 
-        val jsonlFiles = projectDir.listFiles { file ->
-            file.extension == "jsonl"
-        }?.sortedByDescending { it.lastModified() } ?: emptyList()  // 按修改时间降序，优先扫描最新的
+        // 收集所有目录中的会话文件
+        val allJsonlFiles = mutableListOf<File>()
+        for (projectDir in projectDirs) {
+            val files = projectDir.listFiles { file ->
+                file.extension == "jsonl"
+            }?.toList() ?: emptyList()
+            allJsonlFiles.addAll(files)
+            logger.info("[SessionScanner] 目录 ${projectDir.absolutePath} 包含 ${files.size} 个会话文件")
+        }
 
-        logger.info("[SessionScanner] 找到 ${jsonlFiles.size} 个会话文件，开始分批扫描...")
+        // 按修改时间降序排序，优先扫描最新的
+        val jsonlFiles = allJsonlFiles.sortedByDescending { it.lastModified() }
+        logger.info("[SessionScanner] 共找到 ${jsonlFiles.size} 个会话文件，开始分批扫描...")
 
         val batchSize = 10  // 每批扫描10个文件
         val targetCount = maxResults + offset  // 需要的有效会话数（包含offset跳过的部分）
@@ -139,7 +130,20 @@ object ClaudeSessionScanner {
 
         logger.info("[SessionScanner] 扫描完成，有效会话数: ${collectedMetadata.size}")
 
-        val sorted = collectedMetadata.sortedByDescending { it.timestamp }
+        // 如果有重复的 sessionId，保留时间戳最新的（优先选择最近修改的文件）
+        val deduplicatedMetadata = collectedMetadata
+            .groupBy { it.sessionId }
+            .mapValues { entry ->
+                entry.value.maxByOrNull { it.timestamp }!!
+            }
+            .values
+            .toList()
+
+        if (deduplicatedMetadata.size < collectedMetadata.size) {
+            logger.info("[SessionScanner] 去重后有效会话数: ${deduplicatedMetadata.size} (去除了 ${collectedMetadata.size - deduplicatedMetadata.size} 个重复)")
+        }
+
+        val sorted = deduplicatedMetadata.sortedByDescending { it.timestamp }
         return sorted
             .drop(offset.coerceAtLeast(0))
             .take(maxResults)
