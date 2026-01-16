@@ -6,7 +6,6 @@ import com.asakii.plugin.hooks.IdeaFileSyncHooks
 import com.asakii.plugin.mcp.JetBrainsMcpServerProviderImpl
 import com.asakii.plugin.mcp.TerminalMcpServerProviderImpl
 import com.asakii.plugin.mcp.GitMcpServerProviderImpl
-import com.asakii.plugin.mcp.SvnMcpServerProviderImpl
 import com.asakii.server.config.AiAgentServiceConfig
 import com.asakii.server.config.ClaudeDefaults
 import com.asakii.server.config.CodexDefaults
@@ -161,7 +160,6 @@ class HttpServerProjectService(private val project: Project) : Disposable {
             val jetBrainsMcpServerProvider = JetBrainsMcpServerProviderImpl(project)
             val terminalMcpServerProvider = TerminalMcpServerProviderImpl(project)
             val gitMcpServerProvider = GitMcpServerProviderImpl(project)
-            val svnMcpServerProvider = SvnMcpServerProviderImpl(project)
 
             // 创建服务配置提供者（每次 connect 时调用，获取最新的用户设置）
             val serviceConfigProvider: () -> AiAgentServiceConfig = {
@@ -186,7 +184,6 @@ class HttpServerProjectService(private val project: Project) : Disposable {
                         context7ApiKey = settings.context7ApiKey.takeIf { it.isNotBlank() },
                         enableTerminalMcp = settings.enableTerminalMcp,
                         enableGitMcp = settings.enableGitMcp,
-                        enableSvnMcp = settings.enableSvnMcp,
                         mcpServersConfig = loadMcpServersConfig(settings),
                         mcpInstructions = loadMcpInstructions(settings),
                         dangerouslySkipPermissions = settings.defaultBypassPermissions,
@@ -208,7 +205,7 @@ class HttpServerProjectService(private val project: Project) : Disposable {
             // 启动 Ktor HTTP 服务器
             // 开发模式：使用环境变量指定端口（默认 8765）
             // 生产模式：随机端口（支持多项目）
-            val server = HttpApiServer(ideTools, scope, frontendDir, jetbrainsApi, jetbrainsRSocketHandler, jetBrainsMcpServerProvider, terminalMcpServerProvider, gitMcpServerProvider, svnMcpServerProvider, serviceConfigProvider)
+            val server = HttpApiServer(ideTools, scope, frontendDir, jetbrainsApi, jetbrainsRSocketHandler, jetBrainsMcpServerProvider, terminalMcpServerProvider, gitMcpServerProvider, serviceConfigProvider)
             val devPort = System.getenv("CLAUDE_DEV_PORT")?.toIntOrNull()
             val url = server.start(preferredPort = devPort)
             httpServer = server

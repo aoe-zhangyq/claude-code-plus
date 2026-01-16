@@ -53,8 +53,6 @@ import com.asakii.server.mcp.TerminalMcpServerProvider
 import com.asakii.server.mcp.DefaultTerminalMcpServerProvider
 import com.asakii.server.mcp.GitMcpServerProvider
 import com.asakii.server.mcp.DefaultGitMcpServerProvider
-import com.asakii.server.mcp.SvnMcpServerProvider
-import com.asakii.server.mcp.DefaultSvnMcpServerProvider
 import com.asakii.server.logging.StandaloneLogging
 import com.asakii.server.logging.asyncInfo
 import com.asakii.server.settings.ClaudeSettingsLoader
@@ -94,7 +92,6 @@ class AiAgentRpcServiceImpl(
     private val jetBrainsMcpServerProvider: JetBrainsMcpServerProvider = DefaultJetBrainsMcpServerProvider,
     private val terminalMcpServerProvider: TerminalMcpServerProvider = DefaultTerminalMcpServerProvider,
     private val gitMcpServerProvider: GitMcpServerProvider = DefaultGitMcpServerProvider,
-    private val svnMcpServerProvider: SvnMcpServerProvider = DefaultSvnMcpServerProvider,
     private val serviceConfigProvider: () -> AiAgentServiceConfig = { AiAgentServiceConfig() },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) : AiAgentRpcService {
@@ -646,16 +643,6 @@ class AiAgentRpcServiceImpl(
             }
         } else {
             sdkLog.info("⏭️ [buildClaudeOverrides] Git MCP Server 已禁用")
-        }
-
-        // 添加 SVN MCP Server（如果启用且可用）
-        if (defaults.enableSvnMcp) {
-            svnMcpServerProvider.getServer()?.let { svnMcp ->
-                mcpServers["jetbrains_svn"] = svnMcp
-                sdkLog.info("✅ [buildClaudeOverrides] 已添加 SVN MCP Server")
-            }
-        } else {
-            sdkLog.info("⏭️ [buildClaudeOverrides] SVN MCP Server 已禁用")
         }
 
         // 添加从配置文件加载的 MCP 服务器

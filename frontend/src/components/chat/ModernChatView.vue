@@ -1,25 +1,13 @@
 <template>
-  <div class="modern-chat-view" :class="{ 'split-active': splitMode !== 'none' }">
+  <div class="modern-chat-view">
     <!-- 会话标签栏 -->
     <ChatHeader
       class="chat-header-bar"
       @toggle-history="toggleHistoryOverlay"
     />
 
-    <!-- 分屏模式：使用 SplitView -->
-    <div v-if="splitMode !== 'none'" class="split-view-container">
-      <SplitView
-        :mode="splitMode"
-        :panels="splitPanels"
-        :show-toast="showToast"
-        @focus-panel="handleFocusPanel"
-        @swap-panels="handleSwapPanels"
-        @add-panel="handleAddPanel"
-      />
-    </div>
-
-    <!-- 单屏模式：原有布局 -->
-    <div v-else class="chat-screen-content">
+    <!-- 聊天界面内容 -->
+    <div class="chat-screen-content">
       <!-- 消息列表 -->
       <MessageList
         :display-items="displayItems"
@@ -187,7 +175,6 @@ import PendingMessageQueue from './PendingMessageQueue.vue'
 import CompactingCard from './CompactingCard.vue'
 import ToolPermissionInteractive from '@/components/tools/ToolPermissionInteractive.vue'
 import AskUserQuestionInteractive from '@/components/tools/AskUserQuestionInteractive.vue'
-import SplitView from './SplitView.vue'
 import { calculateToolStats } from '@/utils/toolStatistics'
 import type { ContentBlock } from '@/types/message'
 import type { ContextReference, AiModel, PermissionMode, TokenUsage as EnhancedTokenUsage } from '@/types/enhancedMessage'
@@ -398,35 +385,7 @@ const pendingTasks = ref<PendingTask[]>([])
 const debugExpanded = ref(false)
 const chatInputRef = ref<InstanceType<typeof ChatInput>>()
 
-// ========== 分屏相关 ==========
-
-// 分屏模式
-const splitMode = computed(() => sessionStore.splitMode)
-
-// 分屏面板列表
-const splitPanels = computed(() => sessionStore.splitPanels)
-
-// 处理焦点面板切换
-function handleFocusPanel(index: number): void {
-  sessionStore.focusPanel(index)
-}
-
-// 处理交换面板
-function handleSwapPanels(): void {
-  sessionStore.swapSplitPanels()
-}
-
-// 处理添加面板
-function handleAddPanel(tabId: string): void {
-  sessionStore.addSplitPanel(tabId)
-  // 切换到新添加的面板
-  const newIndex = sessionStore.splitPanels.findIndex(p => p.tabId === tabId)
-  if (newIndex >= 0) {
-    sessionStore.focusPanel(newIndex)
-  }
-}
-
-// ========== 生命周期钩子 ==========
+// 生命周期钩子
 onMounted(async () => {
   console.log('ModernChatView mounted')
 
@@ -1018,36 +977,5 @@ async function handleDeleteSession(sessionId: string) {
 .toast-leave-to {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.9);
-}
-
-/* ========== 分屏样式 ========== */
-
-/* 分屏激活时的主容器样式 */
-.modern-chat-view.split-active {
-  display: flex;
-  flex-direction: column;
-}
-
-.split-view-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 8px;
-  box-sizing: border-box;
-}
-
-/* 分屏模式下隐藏单屏模式中的错误对话框和调试面板 */
-.split-active .error-dialog,
-.split-active .debug-panel {
-  display: none;
-}
-
-/* 分屏模式下调整 Toast 提示位置 */
-.split-active .toast-container {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
 }
 </style>

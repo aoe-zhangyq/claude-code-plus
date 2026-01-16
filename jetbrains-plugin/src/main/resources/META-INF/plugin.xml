@@ -47,8 +47,6 @@
     <depends optional="true" config-file="plugin-withJava.xml">com.intellij.java</depends>
     <!-- Git plugin dependency for Git MCP (VCS integration) -->
     <depends optional="true" config-file="plugin-withGit.xml">Git4Idea</depends>
-    <!-- SVN plugin dependency for SVN MCP (VCS integration) -->
-    <depends optional="true" config-file="plugin-withSvn.xml">org.jetbrains.idea.svn</depends>
 
     <idea-version since-build="242.0" until-build="253.*"/>
     

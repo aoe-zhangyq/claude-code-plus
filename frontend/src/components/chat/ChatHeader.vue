@@ -24,56 +24,6 @@
       >
         📋
       </button>
-      <!-- 分屏按钮组 -->
-      <div class="split-buttons" v-if="showSplitButtons">
-        <button
-          class="icon-btn"
-          :class="{ active: splitMode === 'horizontal' }"
-          type="button"
-          title="Split Horizontal"
-          @click="handleSplitHorizontal"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="1" y="1" width="12" height="5" rx="1"/>
-            <rect x="1" y="8" width="12" height="5" rx="1"/>
-          </svg>
-        </button>
-        <button
-          class="icon-btn"
-          :class="{ active: splitMode === 'vertical' }"
-          type="button"
-          title="Split Vertical"
-          @click="handleSplitVertical"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="1" y="1" width="5" height="12" rx="1"/>
-            <rect x="8" y="1" width="5" height="12" rx="1"/>
-          </svg>
-        </button>
-        <button
-          v-if="splitMode !== 'none'"
-          class="icon-btn"
-          type="button"
-          title="Exit Split View"
-          @click="handleExitSplit"
-        >
-          ✕
-        </button>
-      </div>
-      <button
-        class="icon-btn split-toggle"
-        :class="{ active: splitMode !== 'none' }"
-        type="button"
-        title="Split View"
-        @click="toggleSplitButtons"
-      >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="1" y="1" width="5" height="5" rx="1"/>
-          <rect x="8" y="1" width="5" height="5" rx="1"/>
-          <rect x="1" y="8" width="5" height="5" rx="1"/>
-          <rect x="8" y="8" width="5" height="5" rx="1"/>
-        </svg>
-      </button>
       <button
         class="new-session-btn"
         type="button"
@@ -117,7 +67,6 @@ import { computed, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useToastStore } from '@/stores/toastStore'
 import { ConnectionStatus } from '@/types/display'
-import type { SplitMode } from '@/stores/sessionStore'
 import SessionTabs, { type SessionTabInfo } from './SessionTabs.vue'
 import ThemeSwitcher from '@/components/toolbar/ThemeSwitcher.vue'
 import LanguageSwitcher from '@/components/toolbar/LanguageSwitcher.vue'
@@ -126,12 +75,6 @@ import McpStatusPopup from '@/components/toolbar/McpStatusPopup.vue'
 // MCP 状态弹窗
 const showMcpStatus = ref(false)
 const fetchedMcpServers = ref<Array<{ name: string; status: string }> | null>(null)
-
-// 分屏按钮显示状态
-const showSplitButtons = ref(false)
-
-// 获取分屏状态
-const splitMode = computed(() => sessionStore.splitMode)
 
 // 打开弹窗时调用 getMcpStatus API
 watch(showMcpStatus, async (visible) => {
@@ -240,32 +183,6 @@ function handleRename(tabId: string, newName: string) {
       toastStore.success(`Rename success: "${newName}"`)
     }
   }
-}
-
-// ========== 分屏功能 ==========
-
-function toggleSplitButtons() {
-  showSplitButtons.value = !showSplitButtons.value
-}
-
-function handleSplitHorizontal() {
-  if (splitMode.value === 'horizontal') {
-    sessionStore.setSplitMode('none')
-  } else {
-    sessionStore.setSplitMode('horizontal')
-  }
-}
-
-function handleSplitVertical() {
-  if (splitMode.value === 'vertical') {
-    sessionStore.setSplitMode('none')
-  } else {
-    sessionStore.setSplitMode('vertical')
-  }
-}
-
-function handleExitSplit() {
-  sessionStore.setSplitMode('none')
 }
 </script>
 
@@ -387,58 +304,5 @@ function handleExitSplit() {
 
 .new-session-btn svg {
   flex-shrink: 0;
-}
-
-/* 分屏按钮组 */
-.split-buttons {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 6px;
-  background: var(--theme-background, #ffffff);
-  border: 1px solid var(--theme-border, #d0d7de);
-}
-
-.split-buttons .icon-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-}
-
-.split-buttons .icon-btn.active {
-  background: var(--theme-accent, #0366d6);
-  color: #ffffff;
-  border-color: var(--theme-accent, #0366d6);
-}
-
-.split-buttons .icon-btn:hover {
-  background: var(--theme-hover-background, rgba(0, 0, 0, 0.04));
-}
-
-.split-buttons .icon-btn.active:hover {
-  background: var(--theme-accent-hover, #0256c2);
-}
-
-.split-toggle {
-  position: relative;
-}
-
-.split-toggle.active {
-  background: var(--theme-accent, #0366d6);
-  border-color: var(--theme-accent, #0366d6);
-  color: #ffffff;
-}
-
-.split-toggle.active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #ffffff;
 }
 </style>

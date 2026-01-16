@@ -132,7 +132,6 @@ class HttpApiServer(
     private val jetBrainsMcpServerProvider: JetBrainsMcpServerProvider = DefaultJetBrainsMcpServerProvider,  // JetBrains MCP Server Provider
     private val terminalMcpServerProvider: TerminalMcpServerProvider = DefaultTerminalMcpServerProvider,  // Terminal MCP Server Provider
     private val gitMcpServerProvider: GitMcpServerProvider = DefaultGitMcpServerProvider,  // Git MCP Server Provider
-    private val svnMcpServerProvider: SvnMcpServerProvider = DefaultSvnMcpServerProvider,  // SVN MCP Server Provider
     private val serviceConfigProvider: () -> com.asakii.server.config.AiAgentServiceConfig = { com.asakii.server.config.AiAgentServiceConfig() }  // 服务配置提供者（每次 connect 时调用获取最新配置）
 ) : com.asakii.bridge.EventBridge {
     private val json = Json {

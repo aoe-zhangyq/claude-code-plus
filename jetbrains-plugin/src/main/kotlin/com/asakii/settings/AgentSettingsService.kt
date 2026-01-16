@@ -108,7 +108,6 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var terminalAvailableShells: String = "",      // Terminal 可用 shell 列表（逗号分隔，空 = 全部）
         var terminalReadTimeout: Int = 10,             // TerminalRead 默认超时时间（秒）
         var enableGitMcp: Boolean = false,             // Git MCP（VCS 集成，默认禁用）
-        var enableSvnMcp: Boolean = false,             // SVN MCP（VCS 集成，默认禁用）
 
         // MCP 系统提示词（自定义，空字符串表示使用默认值）
         var userInteractionInstructions: String = "",
@@ -116,7 +115,6 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var context7Instructions: String = "",
         var terminalInstructions: String = "",
         var gitInstructions: String = "",
-        var svnInstructions: String = "",
 
         // Git Generate 功能配置
         var gitGenerateSystemPrompt: String = "",     // Git Generate 系统提示词
@@ -477,20 +475,6 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
     val effectiveGitInstructions: String
         get() = state.gitInstructions.ifBlank {
             McpDefaults.getGitInstructions(state.promptLanguage)
-        }
-
-    var enableSvnMcp: Boolean
-        get() = state.enableSvnMcp
-        set(value) { state.enableSvnMcp = value }
-
-    var svnInstructions: String
-        get() = state.svnInstructions
-        set(value) { state.svnInstructions = value }
-
-    /** 获取生效的 SVN MCP 提示词（自定义或默认） */
-    val effectiveSvnInstructions: String
-        get() = state.svnInstructions.ifBlank {
-            McpDefaults.getSvnInstructions(state.promptLanguage)
         }
 
     // Agent 配置

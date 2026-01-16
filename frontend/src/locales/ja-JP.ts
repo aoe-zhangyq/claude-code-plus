@@ -307,11 +307,5 @@ export default {
     compact: '現在のセッションのコンテキストを圧縮',
     context: '現在のセッションのコンテキスト情報を表示',
     rename: '現在のセッションの名前を変更'
-  },
-  split: {
-    addPanel: 'パネルを追加',
-    selectTab: 'セッションを選択',
-    swapVertical: 'パネルを入れ替え',
-    swapHorizontal: 'パネルを入れ替え'
   }
 }

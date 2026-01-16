@@ -49,7 +49,6 @@ data class ClaudeDefaults(
     val context7ApiKey: String? = null,
     val enableTerminalMcp: Boolean = false,
     val enableGitMcp: Boolean = false,
-    val enableSvnMcp: Boolean = false,
     // MCP 服务器配置（从资源文件加载，由 plugin 模块传入）
     val mcpServersConfig: List<McpServerConfig> = emptyList(),
     // MCP 系统提示词（由 plugin 模块加载并传入）
