@@ -90,4 +90,64 @@ object ProjectPathUtils {
             false
         }
     }
+
+    /**
+     * 检测是否为 WSL 路径（如 /mnt/c/..., /mnt/d/...）
+     */
+    fun isWslPath(projectPath: String): Boolean {
+        return projectPath.startsWith("/mnt/") && projectPath.length > 6
+    }
+
+    /**
+     * 将 WSL 路径转换为 Windows 路径
+     *
+     * 例如：
+     * - /mnt/c/Users/username/project → C:\Users\username\project
+     * - /mnt/d/Develop/project → D:\Develop\project
+     *
+     * @param wslPath WSL 格式的绝对路径
+     * @return Windows 格式的绝对路径，如果不是 WSL 路径则返回原路径
+     */
+    fun wslPathToWindowsPath(wslPath: String): String {
+        if (!isWslPath(wslPath)) {
+            return wslPath
+        }
+
+        // 提取盘符（/mnt/c → C:, /mnt/d → D:）
+        val driveLetter = wslPath[5].uppercaseChar()  // 获取 /mnt/X 的 X
+        val remainingPath = wslPath.substring(6)       // 获取盘符后的路径
+
+        // 将 Unix 风格路径分隔符转换为 Windows 风格
+        val windowsPath = remainingPath.replace('/', '\\')
+
+        return "$driveLetter:$windowsPath"
+    }
+
+    /**
+     * 获取项目的可能目录名列表（用于历史文件查找）
+     *
+     * 在 WSL 环境下，可能存在两种历史目录：
+     * 1. Windows 路径转换的目录（使用 Windows 版 Claude CLI 创建）
+     * 2. WSL 路径转换的目录（使用 WSL 版 Claude CLI 创建）
+     *
+     * 返回按优先级排序的目录名列表（优先检查原路径，然后检查转换后的路径）
+     *
+     * @param projectPath 项目的绝对路径
+     * @return 可能的目录名列表
+     */
+    fun getPossibleDirectoryNames(projectPath: String): List<String> {
+        val primaryName = projectPathToDirectoryName(projectPath)
+        val result = mutableListOf(primaryName)
+
+        // 如果是 WSL 路径，添加对应的 Windows 路径目录名
+        if (isWslPath(projectPath)) {
+            val windowsPath = wslPathToWindowsPath(projectPath)
+            val windowsDirName = projectPathToDirectoryName(windowsPath)
+            if (windowsDirName != primaryName) {
+                result.add(windowsDirName)
+            }
+        }
+
+        return result
+    }
 }

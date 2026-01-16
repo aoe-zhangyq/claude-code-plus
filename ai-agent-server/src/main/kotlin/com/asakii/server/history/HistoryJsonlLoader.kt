@@ -32,10 +32,75 @@ import kotlin.io.path.useLines
  * 性能优化：
  * 1. 文件元数据缓存 - 避免重复扫描文件获取行数
  * 2. 从尾部高效加载 - 使用 RandomAccessFile 从尾部向前读取
+ *
+ * WSL 兼容：
+ * - 当检测到 WSL 路径时，会同时检查 Windows 和 WSL 两种可能的历史文件
+ * - 选择修改时间最新的文件进行读取
  */
 object HistoryJsonlLoader {
     private val log = KotlinLogging.logger {}
     private val parser = Json { ignoreUnknownKeys = true }
+
+    // ========== WSL 兼容辅助方法 ==========
+
+    /**
+     * 查找历史文件（支持 WSL 兼容）
+     *
+     * 当检测到 WSL 路径时，会同时检查 Windows 和 WSL 两种可能的历史文件，
+     * 选择修改时间最新的文件。
+     *
+     * @param sessionId 会话 ID
+     * @param projectPath 项目路径
+     * @param wslModeEnabled 是否启用 WSL 模式（用于在文件不存在时决定优先使用哪种路径格式）
+     * @return 历史文件，如果存在则返回；如果都不存在，则根据 wslModeEnabled 返回一个默认路径（可能不存在）
+     */
+    private fun findHistoryFile(sessionId: String, projectPath: String, wslModeEnabled: Boolean = false): File {
+        val claudeDir = ClaudeSessionScanner.getClaudeDir()
+        val possibleDirNames = ProjectPathUtils.getPossibleDirectoryNames(projectPath)
+
+        if (possibleDirNames.size == 1) {
+            // 非 WSL 路径，直接返回单个文件
+            val file = File(claudeDir, "projects/${possibleDirNames[0]}/$sessionId.jsonl")
+            return file
+        }
+
+        // WSL 路径，检查所有可能的文件，选择修改时间最新的
+        var bestFile: File? = null
+        var bestModifiedTime = 0L
+
+        for (dirName in possibleDirNames) {
+            val file = File(claudeDir, "projects/$dirName/$sessionId.jsonl")
+            if (file.exists()) {
+                val fileModifiedTime = file.lastModified()
+                log.debug("[History] 候选文件: ${file.absolutePath}, 修改时间: $fileModifiedTime")
+
+                if (fileModifiedTime > bestModifiedTime) {
+                    bestFile = file
+                    bestModifiedTime = fileModifiedTime
+                }
+            }
+        }
+
+        if (bestFile != null) {
+            log.info("[History] 选择文件: ${bestFile.absolutePath}")
+            return bestFile
+        }
+
+        // 两个文件都不存在，根据 wslModeEnabled 返回默认路径
+        // wslModeEnabled=true 时，CLI 在 Windows 上运行，使用 Windows 路径格式（第二个）
+        // wslModeEnabled=false 时，CLI 在 WSL 上运行，使用 WSL 路径格式（第一个）
+        val preferredDirName = if (wslModeEnabled) {
+            // WSL 模式：优先使用 Windows 路径格式
+            possibleDirNames.getOrNull(1) ?: possibleDirNames[0]
+        } else {
+            // 非 WSL 模式：优先使用 WSL 路径格式
+            possibleDirNames[0]
+        }
+
+        val fallbackFile = File(claudeDir, "projects/$preferredDirName/$sessionId.jsonl")
+        log.debug("[History] 未找到历史文件，返回默认路径: ${fallbackFile.absolutePath} (wslModeEnabled=$wslModeEnabled)")
+        return fallbackFile
+    }
 
     // ========== 消息树数据结构（复刻官方 CLI） ==========
 
@@ -317,34 +382,45 @@ object HistoryJsonlLoader {
     /**
      * 统计历史文件的总行数（物理行数，包含所有类型消息）
      * 使用缓存优化，避免重复扫描
+     * @param sessionId 会话 ID
+     * @param projectPath 项目路径
+     * @param wslModeEnabled 是否启用 WSL 模式
      * @return 文件总行数，文件不存在返回 0
      */
-    fun countLines(sessionId: String?, projectPath: String?): Int {
+    fun countLines(sessionId: String?, projectPath: String?, wslModeEnabled: Boolean = false): Int {
         if (sessionId.isNullOrBlank() || projectPath.isNullOrBlank()) {
             return 0
         }
 
-        val claudeDir = ClaudeSessionScanner.getClaudeDir()
-        val projectId = ProjectPathUtils.projectPathToDirectoryName(projectPath)
-        val historyFile = File(claudeDir, "projects/$projectId/$sessionId.jsonl")
-
-        return getOrRefreshMetadata(historyFile)?.totalLines ?: 0
+        // 使用 findHistoryFile 支持 WSL 兼容
+        val historyFile = findHistoryFile(sessionId, projectPath, wslModeEnabled)
+        return if (historyFile.exists()) {
+            getOrRefreshMetadata(historyFile)?.totalLines ?: 0
+        } else {
+            0
+        }
     }
 
     /**
      * 获取可显示的消息行数（过滤后）
      * 使用缓存优化
+     * @param sessionId 会话 ID
+     * @param projectPath 项目路径
+     * @param wslModeEnabled 是否启用 WSL 模式
+     * @return 可显示行数，文件不存在返回 0
      */
-    fun countDisplayableLines(sessionId: String?, projectPath: String?): Int {
+    fun countDisplayableLines(sessionId: String?, projectPath: String?, wslModeEnabled: Boolean = false): Int {
         if (sessionId.isNullOrBlank() || projectPath.isNullOrBlank()) {
             return 0
         }
 
-        val claudeDir = ClaudeSessionScanner.getClaudeDir()
-        val projectId = ProjectPathUtils.projectPathToDirectoryName(projectPath)
-        val historyFile = File(claudeDir, "projects/$projectId/$sessionId.jsonl")
-
-        return getOrRefreshMetadata(historyFile)?.displayableLines ?: 0
+        // 使用 findHistoryFile 支持 WSL 兼容
+        val historyFile = findHistoryFile(sessionId, projectPath, wslModeEnabled)
+        return if (historyFile.exists()) {
+            getOrRefreshMetadata(historyFile)?.displayableLines ?: 0
+        } else {
+            0
+        }
     }
 
     /**
@@ -355,19 +431,18 @@ object HistoryJsonlLoader {
      *
      * @param sessionId 会话 ID
      * @param projectPath 项目路径
+     * @param wslModeEnabled 是否启用 WSL 模式
      * @return customTitle 值，如果不存在则返回 null
      */
-    fun findCustomTitle(sessionId: String?, projectPath: String?): String? {
+    fun findCustomTitle(sessionId: String?, projectPath: String?, wslModeEnabled: Boolean = false): String? {
         if (sessionId.isNullOrBlank() || projectPath.isNullOrBlank()) {
             return null
         }
 
-        val claudeDir = ClaudeSessionScanner.getClaudeDir()
-        val projectId = ProjectPathUtils.projectPathToDirectoryName(projectPath)
-        val historyFile = File(claudeDir, "projects/$projectId/$sessionId.jsonl")
-
+        // 使用 findHistoryFile 支持 WSL 兼容
+        val historyFile = findHistoryFile(sessionId, projectPath, wslModeEnabled)
         if (!historyFile.exists()) {
-            log.debug("[History] 查找 custom-title 失败: 文件不存在 ${historyFile.absolutePath}")
+            log.debug("[History] 查找 custom-title 失败: 文件不存在 sessionId=$sessionId, projectPath=$projectPath")
             return null
         }
 
@@ -482,24 +557,25 @@ object HistoryJsonlLoader {
      * @param offset 跳过条数（目前仅在 offset < 0 && limit > 0 时使用尾部加载）
      * @param limit 限制条数（<=0 表示全部）
      * @param leafUuid 可选的叶节点 UUID，用于恢复到特定分支（与 CLI 的 Nm 函数一致）
+     * @param wslModeEnabled 是否启用 WSL 模式
      */
     fun loadHistoryMessages(
         sessionId: String?,
         projectPath: String?,
         offset: Int = 0,
         limit: Int = 0,
-        leafUuid: String? = null
+        leafUuid: String? = null,
+        wslModeEnabled: Boolean = false
     ): List<UiStreamEvent> {
         if (sessionId.isNullOrBlank() || projectPath.isNullOrBlank()) {
             log.warn("[History] sessionId/projectPath 缺失，跳过加载")
             return emptyList()
         }
 
-        val claudeDir = ClaudeSessionScanner.getClaudeDir()
-        val projectId = ProjectPathUtils.projectPathToDirectoryName(projectPath)
-        val historyFile = File(claudeDir, "projects/$projectId/$sessionId.jsonl")
+        // 使用 findHistoryFile 支持 WSL 兼容（同时检查 Windows 和 WSL 路径）
+        val historyFile = findHistoryFile(sessionId, projectPath, wslModeEnabled)
         if (!historyFile.exists()) {
-            log.warn("[History] 文件不存在: ${historyFile.absolutePath}")
+            log.warn("[History] 文件不存在: sessionId=$sessionId, projectPath=$projectPath")
             return emptyList()
         }
 
@@ -777,6 +853,7 @@ object HistoryJsonlLoader {
      * @param sessionId Session ID
      * @param projectPath Project path
      * @param messageUuid UUID of the message to truncate from (inclusive - this message will be removed)
+     * @param wslModeEnabled 是否启用 WSL 模式
      * @return Number of physical lines remaining after truncation
      * @throws IllegalArgumentException if sessionId, projectPath or messageUuid is blank
      * @throws IllegalStateException if file does not exist or UUID not found
@@ -784,19 +861,18 @@ object HistoryJsonlLoader {
     fun truncateHistory(
         sessionId: String,
         projectPath: String,
-        messageUuid: String
+        messageUuid: String,
+        wslModeEnabled: Boolean = false
     ): Int {
         require(sessionId.isNotBlank()) { "sessionId cannot be blank" }
         require(projectPath.isNotBlank()) { "projectPath cannot be blank" }
         require(messageUuid.isNotBlank()) { "messageUuid cannot be blank" }
 
-        val claudeDir = ClaudeSessionScanner.getClaudeDir()
-        val projectId = ProjectPathUtils.projectPathToDirectoryName(projectPath)
-        val historyFile = File(claudeDir, "projects/$projectId/$sessionId.jsonl")
-
+        // 使用 findHistoryFile 支持 WSL 兼容
+        val historyFile = findHistoryFile(sessionId, projectPath, wslModeEnabled)
         if (!historyFile.exists()) {
-            log.warn("[History] Truncate failed: file does not exist ${historyFile.absolutePath}")
-            throw IllegalStateException("History file does not exist: ${historyFile.absolutePath}")
+            log.warn("[History] Truncate failed: file does not exist sessionId=$sessionId, projectPath=$projectPath, wslModeEnabled=$wslModeEnabled")
+            throw IllegalStateException("History file does not exist for sessionId=$sessionId, projectPath=$projectPath")
         }
 
         log.info("[History] Truncating history: sessionId=$sessionId, messageUuid=$messageUuid, file=${historyFile.absolutePath}")

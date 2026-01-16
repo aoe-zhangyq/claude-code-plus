@@ -38,6 +38,52 @@ object ClaudeSessionScanner {
     }
 
     /**
+     * 选择最佳的项目目录（支持 WSL 兼容）
+     *
+     * 当检测到 WSL 路径时，会同时检查 Windows 和 WSL 两种可能的目录，
+     * 选择修改时间最新的目录。这样可以兼容使用 Windows 版 Claude CLI 和
+     * WSL 版 Claude CLI 创建的历史文件。
+     *
+     * @param claudeDir Claude 配置目录（通常是 ~/.claude）
+     * @param projectPath 项目路径
+     * @return 最佳的项目目录，如果都不存在则返回 null
+     */
+    private fun selectBestProjectDirectory(claudeDir: File, projectPath: String): File? {
+        val possibleDirNames = ProjectPathUtils.getPossibleDirectoryNames(projectPath)
+
+        if (possibleDirNames.size == 1) {
+            // 非 WSL 路径，直接返回单个目录
+            val dir = File(claudeDir, "projects/${possibleDirNames[0]}")
+            return if (dir.exists() && dir.isDirectory) dir else null
+        }
+
+        // WSL 路径，检查所有可能的目录，选择修改时间最新的
+        var bestDir: File? = null
+        var bestModifiedTime = 0L
+
+        for (dirName in possibleDirNames) {
+            val dir = File(claudeDir, "projects/$dirName")
+            if (dir.exists() && dir.isDirectory) {
+                val dirModifiedTime = dir.lastModified()
+                logger.info("[SessionScanner] 候选目录: ${dir.absolutePath}, 修改时间: $dirModifiedTime")
+
+                if (dirModifiedTime > bestModifiedTime) {
+                    bestDir = dir
+                    bestModifiedTime = dirModifiedTime
+                }
+            }
+        }
+
+        if (bestDir != null) {
+            logger.info("[SessionScanner] 选择目录: ${bestDir.absolutePath}")
+        } else {
+            logger.info("[SessionScanner] 未找到有效的项目目录，候选目录名: $possibleDirNames")
+        }
+
+        return bestDir
+    }
+
+    /**
      * 扫描项目的历史会话
      *
      * @param projectPath 项目路径
@@ -45,16 +91,20 @@ object ClaudeSessionScanner {
      * @return 会话元数据列表，按时间戳降序排列
      *
      * 优化策略：分批扫描，每次扫描10个文件，找到足够的有效会话后提前返回
+     *
+     * WSL 兼容：当检测到 WSL 路径时，会同时检查 Windows 和 WSL 两种可能的目录，
+     * 选择修改时间最新的目录进行扫描。
      */
     fun scanHistorySessions(projectPath: String, maxResults: Int, offset: Int = 0): List<SessionMetadata> {
         val claudeDir = getClaudeDir()
-        val projectId = ProjectPathUtils.projectPathToDirectoryName(projectPath)
-        val projectDir = File(claudeDir, "projects/$projectId")
+        val projectDir = selectBestProjectDirectory(claudeDir, projectPath)
 
-        if (!projectDir.exists() || !projectDir.isDirectory) {
-            logger.info("[SessionScanner] 项目目录不存在: ${projectDir.absolutePath}")
+        if (projectDir == null) {
+            logger.info("[SessionScanner] 项目目录不存在: $projectPath")
             return emptyList()
         }
+
+        logger.info("[SessionScanner] 使用目录: ${projectDir.absolutePath}")
 
         val jsonlFiles = projectDir.listFiles { file ->
             file.extension == "jsonl"
@@ -310,29 +360,40 @@ object ClaudeSessionScanner {
      * @param projectPath 项目路径
      * @param sessionId 会话 ID（文件名，不含扩展名）
      * @return true 删除成功，false 删除失败
+     *
+     * WSL 兼容：当检测到 WSL 路径时，会尝试删除所有可能的会话文件（Windows 和 WSL）
      */
     fun deleteSession(projectPath: String, sessionId: String): Boolean {
         val claudeDir = getClaudeDir()
-        val projectId = ProjectPathUtils.projectPathToDirectoryName(projectPath)
-        val sessionFile = File(claudeDir, "projects/$projectId/$sessionId.jsonl")
+        val possibleDirNames = ProjectPathUtils.getPossibleDirectoryNames(projectPath)
 
-        if (!sessionFile.exists()) {
-            logger.warn("[SessionScanner] 会话文件不存在: ${sessionFile.absolutePath}")
-            return false
-        }
+        // 尝试删除所有可能的会话文件
+        var anyDeleted = false
+        var anyExists = false
 
-        return try {
-            val deleted = sessionFile.delete()
-            if (deleted) {
-                logger.info("[SessionScanner] 已删除会话文件: ${sessionFile.absolutePath}")
-            } else {
-                logger.warn("[SessionScanner] 删除会话文件失败: ${sessionFile.absolutePath}")
+        for (dirName in possibleDirNames) {
+            val sessionFile = File(claudeDir, "projects/$dirName/$sessionId.jsonl")
+            if (sessionFile.exists()) {
+                anyExists = true
+                try {
+                    val deleted = sessionFile.delete()
+                    if (deleted) {
+                        logger.info("[SessionScanner] 已删除会话文件: ${sessionFile.absolutePath}")
+                        anyDeleted = true
+                    } else {
+                        logger.warn("[SessionScanner] 删除会话文件失败: ${sessionFile.absolutePath}")
+                    }
+                } catch (e: Exception) {
+                    logger.error("[SessionScanner] 删除会话文件异常: ${e.message}", e)
+                }
             }
-            deleted
-        } catch (e: Exception) {
-            logger.error("[SessionScanner] 删除会话文件异常: ${e.message}", e)
-            false
         }
+
+        if (!anyExists) {
+            logger.warn("[SessionScanner] 会话文件不存在: sessionId=$sessionId, projectPath=$projectPath")
+        }
+
+        return anyDeleted
     }
 
     /**

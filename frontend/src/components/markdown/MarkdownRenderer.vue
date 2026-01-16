@@ -112,14 +112,15 @@ async function highlightCodeBlocks(html: string): Promise<string> {
 function handleClick(event: MouseEvent) {
   const target = event.target as HTMLElement
 
-  // 处理复制按钮点击
-  if (target.classList.contains('copy-btn')) {
+  // 处理复制按钮点击（使用 closest 以支持点击 SVG 图标）
+  const copyBtn = target.closest('.copy-btn') as HTMLElement
+  if (copyBtn) {
     event.preventDefault()
-    const encodedCode = target.getAttribute('data-code')
+    const encodedCode = copyBtn.getAttribute('data-code')
     if (encodedCode) {
       const code = decodeURIComponent(encodedCode)
       copyToClipboard(code)
-      showCopyFeedback(target)
+      showCopyFeedback(copyBtn)
     }
     return
   }
