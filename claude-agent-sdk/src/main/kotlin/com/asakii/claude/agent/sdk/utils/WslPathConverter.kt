@@ -423,13 +423,10 @@ object WslPathConverter {
         }
 
         // Windows 路径正则：匹配盘符:\路径
-        // 支持以下格式:
-        // - D:\path\to\file
-        // - D:/path/to/file
-        // - 带引号: "D:\path\to\file" 或 'D:\path\to\file'
+        // 支持格式: D:\path\to\file, D:/path/to/file, "D:\path\to\file"
+        // 匹配模式：可选引号 + 盘符: + 路径内容 + 相同的结束引号
         val windowsPathPattern = Regex(
-            """([\"']?)(([A-Za-z]):[\\/][^\"'\s]+)\1""",
-            RegexOption.COMMENTS
+            """([\"']?)(([A-Za-z]):[\\/](?:(?!\1).)+)\1"""
         )
 
         return windowsPathPattern.replace(command) { match ->
@@ -438,9 +435,8 @@ object WslPathConverter {
             val convertedPath = convertPathForShell(path, shellType)
 
             if (convertedPath != path) {
-                logger.debug { "🔄 [Command] Converted path: $path → $convertedPath (shellType=$shellType)" }
-                // 保留原引号包裹转换后的路径
-                "$quote$convertedPath$quote"
+                logger.debug { "Converted path: $path → $convertedPath (shellType=$shellType)" }
+                "$quote$convertedPath$quote"  // 保留原引号
             } else {
                 match.value
             }

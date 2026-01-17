@@ -210,10 +210,7 @@ class TerminalSessionManager(private val project: Project) {
 
             // 获取 shell 命令（用于 IDEA Terminal API）
             val shellCommand = ShellResolver.getShellCommand(actualShellName)
-            logger.info("=== [TerminalSessionManager] createSession ===")
-            logger.info("  requested shellName: $shellName")
-            logger.info("  actualShellName: $actualShellName")
-            logger.info("  shellCommand: $shellCommand")
+            logger.info("Creating terminal session: shell=$actualShellName, command=$shellCommand")
 
             var wrapper: TerminalWidgetWrapper? = null
 
@@ -227,9 +224,7 @@ class TerminalSessionManager(private val project: Project) {
                     // 这确保 Git Bash 和 WSL 终端使用正确的路径格式
                     val shellPathType = WslPathConverter.inferPathTypeFromShell(actualShellName)
                     val workingDirectory = if (shellPathType != ShellPathType.WINDOWS) {
-                        val convertedPath = WslPathConverter.convertPathForShell(basePath, shellPathType)
-                        logger.info("  Converted working directory: $basePath → $convertedPath (shellType=$shellPathType)")
-                        convertedPath
+                        WslPathConverter.convertPathForShell(basePath, shellPathType)
                     } else {
                         basePath
                     }
@@ -311,23 +306,13 @@ class TerminalSessionManager(private val project: Project) {
         return try {
             session.lastCommandAt = System.currentTimeMillis()
 
-            // ============================================================================
-            // 命令路径转换功能 (2025-01-17)
-            // ============================================================================
-            //
+            // 命令路径转换：根据 shell 类型转换命令中的 Windows 路径
             // 修复问题: Git Bash/WSL 终端中命令参数使用 Windows 路径格式时无法正确识别
             // 示例: Bash type "D:\path\file.txt" 在 Git Bash 中应转换为 type "/d/path/file.txt"
-            //
-            // 如果需要回退此功能，注释掉下方三行转换代码即可
-            //
             // 相关文件: claude-agent-sdk/.../WslPathConverter.kt
             // 回退方式: 设置 WslPathConverter.FEATURE_FLAG_COMMAND_PATH_CONVERSION = false
-            // ============================================================================
             val shellPathType = WslPathConverter.inferPathTypeFromShell(session.shellType)
             val convertedCommand = WslPathConverter.convertPathsInCommand(command, shellPathType)
-            if (convertedCommand != command) {
-                logger.info("  [Command Path Conversion] $command → $convertedCommand")
-            }
 
             // 使用 invokeLater + CompletableFuture 避免 invokeAndWait 的 WriteIntentReadAction 限制
             val future = CompletableFuture<Unit>()
@@ -384,9 +369,6 @@ class TerminalSessionManager(private val project: Project) {
             // 命令路径转换 (与 executeCommandAsync 保持一致)
             val shellPathType = WslPathConverter.inferPathTypeFromShell(session.shellType)
             val convertedCommand = WslPathConverter.convertPathsInCommand(command, shellPathType)
-            if (convertedCommand != command) {
-                logger.info("  [Command Path Conversion] $command → $convertedCommand")
-            }
 
             // 使用 invokeLater + CompletableFuture 避免 invokeAndWait 的 WriteIntentReadAction 限制
             val future = CompletableFuture<Unit>()
