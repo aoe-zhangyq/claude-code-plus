@@ -21,7 +21,9 @@ import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 
 /**
@@ -258,78 +260,82 @@ class JetBrainsApiImpl(private val ideaProject: Project) : JetBrainsApi {
 
         override fun getActiveFile(): ActiveFileInfo? {
             return try {
-                var result: ActiveFileInfo? = null
-                ApplicationManager.getApplication().invokeAndWait {
-                    ApplicationManager.getApplication().runReadAction {
-                        val fileEditorManager = FileEditorManager.getInstance(ideaProject)
-                        val selectedTextEditor = fileEditorManager.selectedTextEditor
-                        val selectedFile = fileEditorManager.selectedFiles.firstOrNull()
-                        val projectPath = ideaProject.basePath ?: ""
+                val future = CompletableFuture<ActiveFileInfo?>()
+                ApplicationManager.getApplication().invokeLater {
+                    future.complete(
+                        ApplicationManager.getApplication().runReadAction<ActiveFileInfo?> {
+                            val fileEditorManager = FileEditorManager.getInstance(ideaProject)
+                            val selectedTextEditor = fileEditorManager.selectedTextEditor
+                            val selectedFile = fileEditorManager.selectedFiles.firstOrNull()
+                            val projectPath = ideaProject.basePath ?: ""
 
-                        if (selectedFile != null) {
-                            val absolutePath = selectedFile.path
-                            val relativePath = if (absolutePath.startsWith(projectPath)) {
-                                absolutePath.removePrefix(projectPath).removePrefix("/").removePrefix("\\")
-                            } else {
-                                absolutePath
-                            }
-                            val fileName = selectedFile.name
-
-                            // 获取光标位置和选区信息
-                            val editor = selectedTextEditor
-                            if (editor != null) {
-                                val caretModel = editor.caretModel
-                                val selectionModel = editor.selectionModel
-                                val document = editor.document
-
-                                val caretOffset = caretModel.offset
-                                val line = document.getLineNumber(caretOffset) + 1
-                                val column = caretOffset - document.getLineStartOffset(line - 1) + 1
-
-                                val hasSelection = selectionModel.hasSelection()
-                                var startLine: Int? = null
-                                var startColumn: Int? = null
-                                var endLine: Int? = null
-                                var endColumn: Int? = null
-                                var selectedContent: String? = null
-
-                                if (hasSelection) {
-                                    val startOffset = selectionModel.selectionStart
-                                    val endOffset = selectionModel.selectionEnd
-                                    startLine = document.getLineNumber(startOffset) + 1
-                                    startColumn = startOffset - document.getLineStartOffset(startLine - 1) + 1
-                                    endLine = document.getLineNumber(endOffset) + 1
-                                    endColumn = endOffset - document.getLineStartOffset(endLine - 1) + 1
-                                    selectedContent = selectionModel.selectedText
+                            if (selectedFile != null) {
+                                val absolutePath = selectedFile.path
+                                val relativePath = if (absolutePath.startsWith(projectPath)) {
+                                    absolutePath.removePrefix(projectPath).removePrefix("/").removePrefix("\\")
+                                } else {
+                                    absolutePath
                                 }
+                                val fileName = selectedFile.name
 
-                                result = ActiveFileInfo(
-                                    path = absolutePath,
-                                    relativePath = relativePath,
-                                    name = fileName,
-                                    line = line,
-                                    column = column,
-                                    hasSelection = hasSelection,
-                                    startLine = startLine,
-                                    startColumn = startColumn,
-                                    endLine = endLine,
-                                    endColumn = endColumn,
-                                    selectedContent = selectedContent
-                                )
-                                logger.info("✅ [JetBrainsApi.file] Active file: $relativePath")
-                            } else {
-                                // 非文本编辑器，只返回路径
-                                result = ActiveFileInfo(
-                                    path = absolutePath,
-                                    relativePath = relativePath,
-                                    name = fileName
-                                )
-                                logger.info("✅ [JetBrainsApi.file] Active file (no editor): $relativePath")
-                            }
+                                // 获取光标位置和选区信息
+                                val editor = selectedTextEditor
+                                if (editor != null) {
+                                    val caretModel = editor.caretModel
+                                    val selectionModel = editor.selectionModel
+                                    val document = editor.document
+
+                                    val caretOffset = caretModel.offset
+                                    val line = document.getLineNumber(caretOffset) + 1
+                                    val column = caretOffset - document.getLineStartOffset(line - 1) + 1
+
+                                    val hasSelection = selectionModel.hasSelection()
+                                    var startLine: Int? = null
+                                    var startColumn: Int? = null
+                                    var endLine: Int? = null
+                                    var endColumn: Int? = null
+                                    var selectedContent: String? = null
+
+                                    if (hasSelection) {
+                                        val startOffset = selectionModel.selectionStart
+                                        val endOffset = selectionModel.selectionEnd
+                                        startLine = document.getLineNumber(startOffset) + 1
+                                        startColumn = startOffset - document.getLineStartOffset(startLine - 1) + 1
+                                        endLine = document.getLineNumber(endOffset) + 1
+                                        endColumn = endOffset - document.getLineStartOffset(endLine - 1) + 1
+                                        selectedContent = selectionModel.selectedText
+                                    }
+
+                                    val result = ActiveFileInfo(
+                                        path = absolutePath,
+                                        relativePath = relativePath,
+                                        name = fileName,
+                                        line = line,
+                                        column = column,
+                                        hasSelection = hasSelection,
+                                        startLine = startLine,
+                                        startColumn = startColumn,
+                                        endLine = endLine,
+                                        endColumn = endColumn,
+                                        selectedContent = selectedContent
+                                    )
+                                    logger.info("✅ [JetBrainsApi.file] Active file: $relativePath")
+                                    result
+                                } else {
+                                    // 非文本编辑器，只返回路径
+                                    val result = ActiveFileInfo(
+                                        path = absolutePath,
+                                        relativePath = relativePath,
+                                        name = fileName
+                                    )
+                                    logger.info("✅ [JetBrainsApi.file] Active file (no editor): $relativePath")
+                                    result
+                                }
+                            } else null
                         }
-                    }
+                    )
                 }
-                result
+                future.get(5, TimeUnit.SECONDS)
             } catch (e: Exception) {
                 logger.severe("❌ [JetBrainsApi.file] Failed to get active file: ${e.message}")
                 null

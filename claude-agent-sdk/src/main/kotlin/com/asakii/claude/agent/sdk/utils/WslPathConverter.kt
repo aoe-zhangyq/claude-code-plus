@@ -3,6 +3,20 @@ package com.asakii.claude.agent.sdk.utils
 import mu.KotlinLogging
 
 /**
+ * Shell 路径类型
+ *
+ * 用于区分不同 shell 环境下的路径格式
+ */
+enum class ShellPathType {
+    /** Windows 原生路径 (CMD, PowerShell): `D:\Develop\Code` */
+    WINDOWS,
+    /** WSL 路径: `/mnt/d/Develop/Code` */
+    WSL,
+    /** Git Bash / MSYS2 路径: `/d/Develop/Code` */
+    GIT_BASH
+}
+
+/**
  * WSL 路径转换方向
  */
 enum class WslPathDirection {
@@ -253,5 +267,195 @@ object WslPathConverter {
      */
     fun convertPathList(paths: List<String>, direction: WslPathDirection): List<String> {
         return paths.map { convertPath(it, direction) }
+    }
+
+    /**
+     * 将 Windows 路径转换为 Git Bash (MSYS2) 路径
+     *
+     * Git Bash 使用 MinGW/MSYS2 的路径格式：
+     * - `C:\` → `/c/`
+     * - `D:\` → `/d/`
+     *
+     * 示例：
+     * - `D:\Develop\Code\project` → `/d/Develop/Code/project`
+     * - `C:\Users\username\file.txt` → `/c/Users/username/file.txt`
+     *
+     * @param windowsPath Windows 格式的绝对路径（如 `D:\path\to\file`）
+     * @return Git Bash 格式的路径（如 `/d/path/to/file`），如果转换失败返回原路径
+     */
+    fun windowsToGitBashPath(windowsPath: String): String {
+        if (windowsPath.isEmpty()) return windowsPath
+
+        // 匹配 Windows 盘符路径：如 D:\path 或 D:/path
+        val driveLetterPattern = Regex("^([A-Za-z]):[/\\\\](.*)$")
+        val matchResult = driveLetterPattern.matchEntire(windowsPath)
+
+        return if (matchResult != null) {
+            val drive = matchResult.groupValues[1].lowercase()
+            val restPath = matchResult.groupValues[2]
+            // 将反斜杠转换为正斜杠
+            val gitBashPath = restPath.replace("\\", "/")
+            "/$drive/$gitBashPath"
+        } else {
+            // 不是标准的 Windows 绝对路径，保持原样
+            logger.debug { "⚠️ Not a Windows absolute path: $windowsPath" }
+            windowsPath
+        }
+    }
+
+    /**
+     * 将 Git Bash (MSYS2) 路径转换为 Windows 路径
+     *
+     * 示例：
+     * - `/d/Develop/Code/project` → `D:\Develop\Code\project`
+     * - `/c/Users/username/file.txt` → `C:\Users\username\file.txt`
+     *
+     * @param gitBashPath Git Bash 格式的路径（如 `/d/path/to/file`）
+     * @return Windows 格式的路径（如 `D:\path\to\file`），如果转换失败返回原路径
+     */
+    fun gitBashToWindowsPath(gitBashPath: String): String {
+        if (gitBashPath.isEmpty()) return gitBashPath
+
+        // 匹配 Git Bash /驱动器/ 路径（如 /c/ 或 /d/）
+        val gitBashPattern = Regex("^/([a-z])/(.*)$")
+        val matchResult = gitBashPattern.matchEntire(gitBashPath)
+
+        return if (matchResult != null) {
+            val drive = matchResult.groupValues[1].uppercase()
+            val restPath = matchResult.groupValues[2]
+            // 将正斜杠转换为反斜杠
+            val windowsPath = restPath.replace("/", "\\")
+            "$drive:\\$windowsPath"
+        } else {
+            // 不是标准的 Git Bash 路径，保持原样
+            logger.debug { "⚠️ Not a Git Bash path: $gitBashPath" }
+            gitBashPath
+        }
+    }
+
+    /**
+     * 检测路径是否为 Git Bash /驱动器/ 路径
+     *
+     * @param path 待检测路径
+     * @return true 如果是 Git Bash 路径
+     */
+    fun isGitBashPath(path: String): Boolean {
+        if (path.isEmpty()) return false
+        val gitBashPattern = Regex("^/([a-z])/.+$")
+        return gitBashPattern.containsMatchIn(path)
+    }
+
+    /**
+     * 根据目标 shell 类型转换 Windows 路径
+     *
+     * @param windowsPath Windows 格式的路径
+     * @param shellType 目标 shell 类型
+     * @return 转换后的路径
+     */
+    fun convertPathForShell(windowsPath: String, shellType: ShellPathType): String {
+        return when (shellType) {
+            ShellPathType.WINDOWS -> windowsPath
+            ShellPathType.WSL -> windowsToWslPath(windowsPath)
+            ShellPathType.GIT_BASH -> windowsToGitBashPath(windowsPath)
+        }
+    }
+
+    /**
+     * 根据 shell 名称推断路径类型
+     *
+     * @param shellName shell 名称（如 "git-bash", "powershell", "wsl"）
+     * @return 对应的路径类型
+     */
+    fun inferPathTypeFromShell(shellName: String): ShellPathType {
+        val lowerName = shellName.lowercase()
+        return when {
+            lowerName.contains("wsl") || lowerName.contains("ubuntu") ||
+            lowerName.contains("debian") || lowerName.contains("opensuse") -> ShellPathType.WSL
+            lowerName.contains("git bash") || lowerName.contains("git-bash") ||
+            lowerName.contains("mingw") || lowerName.contains("msys") -> ShellPathType.GIT_BASH
+            lowerName.contains("powershell") || lowerName.contains("pwsh") ||
+            lowerName.contains("cmd") || lowerName.contains("command prompt") -> ShellPathType.WINDOWS
+            lowerName.contains("bash") || lowerName.contains("zsh") ||
+            lowerName.contains("fish") -> ShellPathType.GIT_BASH  // Unix-like shells on Windows typically use Git Bash format
+            else -> ShellPathType.WINDOWS  // 默认使用 Windows 格式
+        }
+    }
+
+    // ============================================================================
+    // 命令路径转换功能
+    // ============================================================================
+    //
+    // 如果需要回退此功能，有两种方式：
+    // 1. 设置 FEATURE_FLAG_COMMAND_PATH_CONVERSION = false
+    // 2. 在 TerminalSessionManager.executeCommandAsync() 中注释掉转换调用
+    //
+    // 修改日期: 2025-01-17
+    // 修改原因: 修复 Git Bash/WSL 终端中命令参数使用 Windows 路径格式的问题
+    // 示例: Bash type "D:\path\file.txt" 在 Git Bash 中应转换为 type "/d/path/file.txt"
+    // ============================================================================
+
+    /**
+     * 命令路径转换功能开关
+     *
+     * 设置为 false 可禁用命令中的路径自动转换功能
+     */
+    const val FEATURE_FLAG_COMMAND_PATH_CONVERSION = true
+
+    /**
+     * 转换命令字符串中的 Windows 路径为适合目标 shell 的格式
+     *
+     * 此功能会扫描命令字符串，查找其中的 Windows 路径（如 D:\path\file.txt），
+     * 并根据目标 shell 类型转换为相应格式。
+     *
+     * 支持的路径格式:
+     * - 带引号的路径: "D:\path\file.txt" 或 'D:\path\file.txt'
+     * - 不带引号的路径: D:\path\file.txt
+     *
+     * @param command 原始命令字符串
+     * @param shellType 目标 shell 类型
+     * @return 转换后的命令字符串
+     *
+     * @since 2025-01-17
+     */
+    fun convertPathsInCommand(command: String, shellType: ShellPathType): String {
+        if (!FEATURE_FLAG_COMMAND_PATH_CONVERSION || shellType == ShellPathType.WINDOWS) {
+            return command
+        }
+
+        // Windows 路径正则：匹配盘符:\路径
+        // 支持以下格式:
+        // - D:\path\to\file
+        // - D:/path/to/file
+        // - 带引号: "D:\path\to\file" 或 'D:\path\to\file'
+        val windowsPathPattern = Regex(
+            """([\"']?)(([A-Za-z]):[\\/][^\"'\s]+)\1""",
+            RegexOption.COMMENTS
+        )
+
+        return windowsPathPattern.replace(command) { match ->
+            val quote = match.groupValues[1]  // 引号字符（可能为空）
+            val path = match.groupValues[2]   // 路径部分
+            val convertedPath = convertPathForShell(path, shellType)
+
+            if (convertedPath != path) {
+                logger.debug { "🔄 [Command] Converted path: $path → $convertedPath (shellType=$shellType)" }
+                // 保留原引号包裹转换后的路径
+                "$quote$convertedPath$quote"
+            } else {
+                match.value
+            }
+        }
+    }
+
+    /**
+     * 转换命令字符串中的 Windows 路径（根据 shell 名称推断类型）
+     *
+     * @param command 原始命令字符串
+     * @param shellName shell 名称
+     * @return 转换后的命令字符串
+     */
+    fun convertPathsInCommand(command: String, shellName: String): String {
+        val shellType = inferPathTypeFromShell(shellName)
+        return convertPathsInCommand(command, shellType)
     }
 }

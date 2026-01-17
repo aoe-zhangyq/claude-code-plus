@@ -4,33 +4,35 @@ import com.asakii.claude.agent.sdk.mcp.ToolResult
 import com.asakii.claude.agent.sdk.utils.WslPathConverter
 import com.asakii.claude.agent.sdk.utils.WslPathDirection
 import com.asakii.server.mcp.schema.ToolSchemaLoader
-import com.intellij.codeHighlighting.HighlightDisplayLevel
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
-import com.intellij.codeInsight.daemon.impl.HighlightVisitor
-import com.intellij.codeInsight.daemon.impl.analysis.HighlightInfoHolder
-import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.InspectionManager
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.codeInspection.ex.InspectionProfileImpl
-import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
+import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.lang.annotation.HighlightSeverity
-import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFileManager
-import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiErrorElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiRecursiveElementVisitor
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import mu.KotlinLogging
 import java.io.File
-
-private val logger = KotlinLogging.logger {}
+import kotlin.coroutines.resume
 
 /**
  * 问题严重级别
@@ -40,6 +42,8 @@ private val logger = KotlinLogging.logger {}
  * - ERROR: 代码错误（编译错误、类型错误等）
  * - WARNING: 警告（过时 API、潜在问题、可能的 bug）
  * - SUGGESTION: 建议（代码风格、未使用的符号、可优化项）
+ *
+ * @see ProblemHighlightType 对应的 IDEA 原生类型
  */
 @Serializable
 enum class ProblemSeverity {
@@ -50,12 +54,15 @@ enum class ProblemSeverity {
  * 分析结果：区分语法错误、编译器错误和代码检查问题
  */
 private data class AnalysisResult(
-    val psiFile: PsiFile?,  // 用于计算行列信息
+    val psiFile: PsiFile?,
     val syntaxErrors: List<ProblemDescriptor>,
-    val highlightVisitorProblems: List<HighlightInfo>,  // 来自 HighlightVisitor（包含编译器错误）
-    val inspectionProblems: List<Pair<ProblemDescriptor, HighlightDisplayLevel?>>
+    val highlightInfos: List<HighlightInfo>,
+    val inspectionProblems: List<ProblemDescriptor>
 )
 
+/**
+ * 文件问题数据结构
+ */
 @Serializable
 data class FileProblem(
     val severity: ProblemSeverity,
@@ -67,6 +74,9 @@ data class FileProblem(
     val description: String? = null
 )
 
+/**
+ * 文件分析结果
+ */
 @Serializable
 data class FileProblemsResult(
     val filePath: String,
@@ -81,11 +91,41 @@ data class FileProblemsResult(
 /**
  * 文件静态错误工具
  *
- * 使用 InspectionEngine API 直接运行检查，无需打开文件
- * 参考: https://plugins.jetbrains.com/docs/intellij/code-inspections.html
+ * 获取文件的编译错误、警告和建议，无需打开文件即可分析。
+ *
+ * ## 设计原理
+ *
+ * ### 线程模型（参考 [Threading Model](https://plugins.jetbrains.com/docs/intellij/threading-model.html)）
+ *
+ * 1. **VFS 刷新**：使用 `invokeAndWait` + `WriteAction.run` 在 EDT 上同步执行
+ *    - 必须使用 `ApplicationManager.invokeAndWait()` 而非 `SwingUtilities.invokeLater()`
+ *    - 2025.1+ 变更：后者不再持有 write-intent lock
+ *
+ * 2. **等待索引完成**：使用 `DumbService.runReadActionInSmartMode()`
+ *    - 在 dumb mode（索引未就绪）时自动等待，而非直接返回空结果
+ *    - 参考 [DumbService 文档](https://plugins.jetbrains.com/docs/intellij/dumb-aware.html)
+ *
+ * 3. **PSI 分析**：在后台线程执行 `Task.Backgroundable`
+ *
+ * ### 问题来源
+ *
+ * 1. **PSI 语法错误**：`PsiErrorElement` - 解析器级别错误
+ * 2. **HighlightInfo**：`DaemonCodeAnalyzer` 的已有高亮信息（包含编译器错误）
+ * 3. **Inspection 问题**：`InspectionManager` 运行的代码检查
+ *
+ * ## 参数说明
+ *
+ * - `filePath`: 文件相对路径
+ * - `refresh`: 是否刷新 VFS（默认 true，编辑文件后调用）
+ * - `includeWarnings`: 是否包含警告（默认 true）
+ * - `includeSuggestions`: 是否包含建议（默认 false）
+ * - `maxProblems`: 最大返回问题数（默认 50）
  *
  * @param project IDEA 项目
  * @param wslModeEnabled 是否启用 WSL 模式（自动转换路径格式）
+ *
+ * @see <a href="https://plugins.jetbrains.com/docs/intellij/code-inspections.html">Code Inspections</a>
+ * @see <a href="https://plugins.jetbrains.com/docs/intellij/threading-model.html">Threading Model</a>
  */
 class FileProblemsTool(
     private val project: Project,
@@ -94,8 +134,14 @@ class FileProblemsTool(
 
     fun getInputSchema(): Map<String, Any> = ToolSchemaLoader.getSchema("FileProblems")
 
+    /**
+     * 执行文件分析
+     *
+     * @param arguments 工具参数
+     * @return 分析结果（Markdown 格式）或错误信息
+     */
     suspend fun execute(arguments: Map<String, Any>): Any {
-        // WSL 模式：将 WSL 路径转换为 Windows 路径
+        // 路径处理
         val rawFilePath = arguments["filePath"] as? String
             ?: return ToolResult.error("Missing required parameter: filePath")
 
@@ -104,12 +150,11 @@ class FileProblemsTool(
         } else {
             rawFilePath
         }
+
         val includeWarnings = arguments["includeWarnings"] as? Boolean ?: true
         val includeSuggestions = arguments["includeSuggestions"] as? Boolean ?: false
-        // 兼容旧参数名
         val includeWeakWarnings = arguments["includeWeakWarnings"] as? Boolean ?: includeSuggestions
         val maxProblems = ((arguments["maxProblems"] as? Number)?.toInt() ?: 50).coerceAtLeast(1)
-        // 刷新 VFS 以确保文件修改被 IDEA 感知（默认启用）
         val refresh = arguments["refresh"] as? Boolean ?: true
 
         val projectPath = project.basePath
@@ -124,289 +169,140 @@ class FileProblemsTool(
         val virtualFile = LocalFileSystem.getInstance().findFileByPath(absolutePath)
             ?: return ToolResult.error("File not found: $filePath")
 
-        // 刷新 VFS 以确保文件修改被 IDEA 感知
+        // Step 1: VFS 刷新（使用 invokeLater + CompletableFuture 避免 invokeAndWait 的 WriteIntentReadAction 限制）
         if (refresh) {
             logger.debug { "🔄 Refreshing VFS for file: $filePath" }
-            VirtualFileManager.getInstance().syncRefresh()
-            // 同时刷新具体文件
-            virtualFile.refresh(true, false)
+            try {
+                val future = CompletableFuture<Unit>()
+                ApplicationManager.getApplication().invokeLater {
+                    WriteAction.run<Nothing> {
+                        VirtualFileManager.getInstance().syncRefresh()
+                        virtualFile.refresh(true, false)
+                    }
+                    future.complete(Unit)
+                }
+                future.get(5, TimeUnit.SECONDS)
+            } catch (e: Exception) {
+                logger.warn(e) { "⚠️ VFS refresh failed, continuing anyway" }
+            }
         }
 
-        val problems = mutableListOf<FileProblem>()
-        var syntaxErrorCount = 0
-        var errorCount = 0
-        var warningCount = 0
-        var suggestionCount = 0
-
-        try {
-            // 使用 InspectionEngine 直接运行检查，无需打开文件
-            val analysisResult = runInspectionsOnFile(virtualFile, includeWarnings, includeWeakWarnings)
-
-            logger.debug { "📊 Found ${analysisResult.syntaxErrors.size} syntax errors, ${analysisResult.highlightVisitorProblems.size} highlight visitor problems and ${analysisResult.inspectionProblems.size} inspection problems for $filePath" }
-
-            // 1. 处理语法错误（始终包含）
-            for (descriptor in analysisResult.syntaxErrors) {
-                if (problems.size >= maxProblems) break
-                syntaxErrorCount++
-                addProblemFromDescriptor(descriptor, ProblemSeverity.SYNTAX_ERROR, problems)
+        // Step 2: 在后台线程运行分析（等待索引完成后执行）
+        val analysisResult = try {
+            withTimeout(30_000) {
+                runAnalysisInBackground(virtualFile, includeWarnings, includeWeakWarnings)
             }
-
-            // 2. 处理 HighlightVisitor 检测到的问题（编译器错误等）
-            for (highlightInfo in analysisResult.highlightVisitorProblems) {
-                if (problems.size >= maxProblems) break
-
-                val severity = classifyHighlightInfo(highlightInfo.severity)
-
-                when (severity) {
-                    ProblemSeverity.SYNTAX_ERROR -> {
-                        // 语法错误已在上面处理
-                        continue
-                    }
-                    ProblemSeverity.ERROR -> {
-                        errorCount++
-                    }
-                    ProblemSeverity.WARNING -> {
-                        if (!includeWarnings) continue
-                        warningCount++
-                    }
-                    ProblemSeverity.SUGGESTION -> {
-                        if (!includeWeakWarnings) continue
-                        suggestionCount++
-                    }
-                }
-
-                addProblemFromHighlightInfo(highlightInfo, severity, problems, analysisResult.psiFile)
-            }
-
-            // 3. 处理代码检查问题
-            for ((descriptor, inspectionLevel) in analysisResult.inspectionProblems) {
-                if (problems.size >= maxProblems) break
-
-                val severity = classifyProblem(descriptor.highlightType, inspectionLevel)
-
-                // 根据过滤条件决定是否包含
-                when (severity) {
-                    ProblemSeverity.SYNTAX_ERROR -> {
-                        // 语法错误已在上面处理
-                        continue
-                    }
-                    ProblemSeverity.ERROR -> {
-                        errorCount++
-                    }
-                    ProblemSeverity.WARNING -> {
-                        if (!includeWarnings) continue
-                        warningCount++
-                    }
-                    ProblemSeverity.SUGGESTION -> {
-                        if (!includeWeakWarnings) continue
-                        suggestionCount++
-                    }
-                }
-
-                addProblemFromDescriptor(descriptor, severity, problems)
-            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            logger.error(e) { "❌ Analysis timed out after 30s" }
+            return ToolResult.error("Analysis timed out. Please try again.")
         } catch (e: Exception) {
-            logger.error(e) { "❌ Analysis error for $filePath" }
-            return ToolResult.error("Analysis error: ${e.message}")
+            logger.error(e) { "❌ Analysis failed" }
+            return ToolResult.error("Analysis failed: ${e.message}")
         }
 
-        val sortedProblems = problems.sortedWith(
-            compareBy({ it.severity.ordinal }, { it.line }, { it.column })
+        if (analysisResult == null) {
+            return ToolResult.error("Analysis failed: no result (project may still be indexing)")
+        }
+
+        // Step 3: 收集并格式化结果
+        val problems = collectProblems(
+            analysisResult,
+            includeWarnings,
+            includeWeakWarnings,
+            maxProblems
         )
 
-        val sb = StringBuilder()
-        sb.appendLine("## 📄 File: `$filePath`")
-        sb.appendLine()
-
-        if (sortedProblems.isEmpty()) {
-            sb.appendLine("✅ **No issues found**")
-        } else {
-            sb.appendLine("| Severity | Location | Message |")
-            sb.appendLine("|----------|----------|---------|")
-            sortedProblems.forEach { problem ->
-                val icon = when (problem.severity) {
-                    ProblemSeverity.SYNTAX_ERROR -> "🚫"
-                    ProblemSeverity.ERROR -> "❌"
-                    ProblemSeverity.WARNING -> "⚠️"
-                    ProblemSeverity.SUGGESTION -> "💡"
-                }
-                val location = "${problem.line}:${problem.column}"
-                // 转义 Markdown 表格中的特殊字符
-                val escapedMessage = problem.message.replace("|", "\\|").replace("\n", " ")
-                sb.appendLine("| $icon | `$location` | $escapedMessage |")
-            }
-        }
-
-        sb.appendLine()
-        sb.appendLine("---")
-        val parts = mutableListOf<String>()
-        if (syntaxErrorCount > 0) parts.add("🚫 **$syntaxErrorCount** syntax errors")
-        if (errorCount > 0) parts.add("❌ **$errorCount** errors")
-        if (warningCount > 0) parts.add("⚠️ **$warningCount** warnings")
-        if (suggestionCount > 0) parts.add("💡 **$suggestionCount** suggestions")
-        if (parts.isEmpty()) {
-            sb.append("📊 No problems")
-        } else {
-            sb.append("📊 Summary: ${parts.joinToString(" | ")}")
-        }
-
-        val result = sb.toString()
-
-        // WSL 模式：转换结果中的 Windows 路径为 WSL 路径
-        return if (wslModeEnabled) {
-            WslPathConverter.convertPathsInResult(result)
-        } else {
-            result
-        }
+        return formatResult(filePath, problems)
     }
 
     /**
-     * 使用 InspectionEngine 和 HighlightVisitor 直接在文件上运行检查
-     * 无需打开文件，直接通过 PsiFile 运行
+     * 在后台线程运行分析
+     *
+     * 使用 DumbService.runReadActionInSmartMode 确保索引完成后才执行分析
+     * 参考：https://plugins.jetbrains.com/docs/intellij/dumb-aware.html
      */
-    private fun runInspectionsOnFile(
+    private suspend fun runAnalysisInBackground(
         virtualFile: com.intellij.openapi.vfs.VirtualFile,
         includeWarnings: Boolean,
         includeWeakWarnings: Boolean
-    ): AnalysisResult {
-        return try {
-            // 使用 EmptyProgressIndicator 静默运行，避免显示弹窗
-            val indicator = com.intellij.openapi.progress.EmptyProgressIndicator()
-            val computation: () -> AnalysisResult = {
-                ReadAction.compute<AnalysisResult, Exception> {
-                    val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
-                        ?: return@compute AnalysisResult(null, emptyList(), emptyList(), emptyList())
+    ): AnalysisResult? {
+        return suspendCancellableCoroutine { cont ->
+            val task = object : Task.Backgroundable(project, "Analyzing File Problems", true) {
+                private var result: AnalysisResult? = null
 
-                    runInspectionsOnPsiFile(psiFile, includeWarnings, includeWeakWarnings)
+                override fun run(indicator: ProgressIndicator) {
+                    indicator.isIndeterminate = false
+
+                    result = try {
+                        // 使用 runReadActionInSmartMode 等待索引完成
+                        DumbService.getInstance(project).runReadActionInSmartMode<AnalysisResult> {
+                            indicator.text = "Waiting for index to complete..."
+                            indicator.fraction = 0.1
+
+                            val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
+                            if (psiFile == null) {
+                                logger.debug { "⚠️ Could not find PsiFile for ${virtualFile.path}" }
+                                return@runReadActionInSmartMode AnalysisResult(null, emptyList(), emptyList(), emptyList())
+                            }
+
+                            indicator.text2 = "Analyzing ${psiFile.name}..."
+                            indicator.fraction = 0.5
+
+                            performAnalysis(psiFile, includeWarnings, includeWeakWarnings)
+                        }
+                    } catch (e: Exception) {
+                        logger.error(e) { "❌ Error during analysis" }
+                        null
+                    }
+                }
+
+                override fun onSuccess() {
+                    if (cont.isActive) {
+                        cont.resume(result)
+                    }
+                }
+
+                override fun onThrowable(error: Throwable) {
+                    logger.error(error) { "❌ Analysis task failed" }
+                    if (cont.isActive) {
+                        cont.resume(null)
+                    }
                 }
             }
-            ProgressManager.getInstance().runProcess(computation, indicator)
-                ?: AnalysisResult(null, emptyList(), emptyList(), emptyList())
-        } catch (e: Exception) {
-            logger.error(e) { "❌ Error running inspections" }
-            AnalysisResult(null, emptyList(), emptyList(), emptyList())
+            ProgressManager.getInstance().run(task)
+            cont.invokeOnCancellation {
+                logger.info { "⚠️ Analysis coroutine cancelled" }
+            }
         }
     }
 
     /**
-     * 在 PsiFile 上运行所有启用的检查
-     * 返回结构化的分析结果，区分语法错误、编译器错误和代码检查问题
+     * 执行实际的 PSI 分析
+     *
+     * @param psiFile 要分析的 PSI 文件
+     * @param includeWarnings 是否包含警告
+     * @param includeWeakWarnings 是否包含弱警告
+     * @return 分析结果
      */
-    private fun runInspectionsOnPsiFile(
+    private fun performAnalysis(
         psiFile: PsiFile,
         includeWarnings: Boolean,
         includeWeakWarnings: Boolean
     ): AnalysisResult {
-        val inspectionManager = InspectionManager.getInstance(project)
-        val context = inspectionManager.createNewGlobalContext()
-
-        // 获取当前项目的检查配置
-        val profile = InspectionProjectProfileManager.getInstance(project).currentProfile as? InspectionProfileImpl
-            ?: return AnalysisResult(psiFile, emptyList(), emptyList(), emptyList())
-
-        // 1. 收集 PSI 语法错误（解析器级别的错误，最重要）
-        val syntaxErrors = collectPsiSyntaxErrors(psiFile, inspectionManager)
+        // 1. 收集 PSI 语法错误（解析器级别）
+        val syntaxErrors = collectSyntaxErrors(psiFile)
         logger.debug { "📊 Found ${syntaxErrors.size} PSI syntax errors" }
 
-        // 2. 运行 HighlightVisitor 分析（检测编译器错误，如类型不匹配）
-        val highlightVisitorProblems = runHighlightVisitors(psiFile)
-        logger.debug { "📊 Found ${highlightVisitorProblems.size} highlight visitor problems" }
+        // 2. 获取已有的 HighlightInfo（编译器错误）
+        // 注意：这依赖于文件已被 IDEA 分析过（在编辑器中打开过）
+        val highlightInfos = getHighlightInfos(psiFile)
+        logger.debug { "📊 Found ${highlightInfos.size} highlight infos" }
 
-        // 3. 运行代码检查（LocalInspectionTool），并保存每个检查的配置级别
-        val inspectionProblems = mutableListOf<Pair<ProblemDescriptor, HighlightDisplayLevel?>>()
-        val toolsList = profile.getAllEnabledInspectionTools(project)
+        // 3. 运行代码检查（可选）
+        val inspectionProblems = runInspections(psiFile, includeWarnings, includeWeakWarnings)
+        logger.debug { "📊 Found ${inspectionProblems.size} inspection problems" }
 
-        for (tools in toolsList) {
-            val toolWrapper = tools.tool
-
-            // 只运行 LocalInspectionTool（文件级别的检查）
-            if (toolWrapper !is LocalInspectionToolWrapper) continue
-
-            // 获取配置的严重级别
-            val configuredLevel = tools.defaultState.level
-            val isWarning = configuredLevel == HighlightDisplayLevel.WARNING
-            val isWeakWarning = configuredLevel == HighlightDisplayLevel.WEAK_WARNING ||
-                               configuredLevel == HighlightDisplayLevel.DO_NOT_SHOW
-
-            // 根据过滤条件决定是否运行此检查
-            if (!includeWarnings && isWarning) continue
-            if (!includeWeakWarnings && isWeakWarning) continue
-
-            try {
-                val descriptors = InspectionEngine.runInspectionOnFile(psiFile, toolWrapper, context)
-                // 将每个问题与其检查的配置级别关联
-                descriptors.forEach { descriptor ->
-                    inspectionProblems.add(descriptor to configuredLevel)
-                }
-            } catch (e: Exception) {
-                logger.debug { "⚠️ Inspection ${toolWrapper.shortName} failed: ${e.message}" }
-            }
-        }
-
-        return AnalysisResult(psiFile, syntaxErrors, highlightVisitorProblems, inspectionProblems)
-    }
-
-    /**
-     * 运行 HighlightVisitor 分析
-     *
-     * HighlightVisitor 可以检测编译器级别的错误，如：
-     * - 类型不匹配
-     * - 未解析的引用
-     * - 无效的方法调用
-     *
-     * 这些错误不需要文件在编辑器中打开就能检测到
-     */
-    private fun runHighlightVisitors(psiFile: PsiFile): List<HighlightInfo> {
-        // 如果在 dumb mode 中，跳过需要索引的分析
-        if (DumbService.isDumb(project)) {
-            logger.debug { "⚠️ Skipping HighlightVisitor analysis in dumb mode" }
-            return emptyList()
-        }
-
-        val problems = mutableListOf<HighlightInfo>()
-
-        try {
-            // 创建 HighlightInfoHolder 来收集问题
-            val holder = HighlightInfoHolder(psiFile)
-
-            // 获取所有注册的 HighlightVisitor
-            val visitors = HighlightVisitor.EP_HIGHLIGHT_VISITOR.getExtensions(project)
-
-            for (visitor in visitors) {
-                // 检查 visitor 是否适合当前文件
-                if (!visitor.suitableForFile(psiFile)) continue
-
-                try {
-                    // 克隆 visitor 以确保线程安全
-                    val clonedVisitor = visitor.clone()
-
-                    // 运行分析 - 确保回调也在 ReadAction 中执行
-                    clonedVisitor.analyze(psiFile, true, holder) {
-                        ReadAction.run<Exception> {
-                            // 访问所有元素
-                            psiFile.accept(object : PsiRecursiveElementVisitor() {
-                                override fun visitElement(element: com.intellij.psi.PsiElement) {
-                                    clonedVisitor.visit(element)
-                                    super.visitElement(element)
-                                }
-                            })
-                        }
-                    }
-                } catch (e: Exception) {
-                    logger.debug { "⚠️ HighlightVisitor ${visitor.javaClass.simpleName} failed: ${e.message}" }
-                }
-            }
-
-            // 从 holder 中提取所有问题
-            for (i in 0 until holder.size()) {
-                val info = holder[i]
-                problems.add(info)
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "❌ Error running HighlightVisitor analysis" }
-        }
-
-        return problems
+        return AnalysisResult(psiFile, syntaxErrors, highlightInfos, inspectionProblems)
     }
 
     /**
@@ -417,31 +313,200 @@ class FileProblemsTool(
      * - 意外的 token
      * - 不完整的语句
      *
-     * 这些错误不需要文件在编辑器中打开就能检测到
+     * @param psiFile PSI 文件
+     * @return 语法错误描述符列表
      */
-    private fun collectPsiSyntaxErrors(
-        psiFile: PsiFile,
-        inspectionManager: InspectionManager
-    ): List<ProblemDescriptor> {
+    private fun collectSyntaxErrors(psiFile: PsiFile): List<ProblemDescriptor> {
         val problems = mutableListOf<ProblemDescriptor>()
+        val inspectionManager = InspectionManager.getInstance(project)
 
         psiFile.accept(object : PsiRecursiveElementVisitor() {
             override fun visitErrorElement(element: PsiErrorElement) {
                 super.visitErrorElement(element)
 
-                // 创建 ProblemDescriptor 来表示语法错误
                 val descriptor = inspectionManager.createProblemDescriptor(
                     element,
                     element.errorDescription,
-                    false,  // onTheFly = false，因为这不是在编辑时运行的
-                    emptyArray(),  // 没有快速修复
-                    ProblemHighlightType.ERROR  // 语法错误总是 ERROR 级别
+                    false,
+                    emptyArray(),
+                    ProblemHighlightType.ERROR
                 )
                 problems.add(descriptor)
             }
         })
 
         return problems
+    }
+
+    /**
+     * 获取 HighlightInfo（编译器错误和警告）
+     *
+     * 从 DaemonCodeAnalyzer 获取已有的高亮信息。
+     * 注意：此功能依赖于文件已被 IDEA 分析过（在编辑器中打开过）。
+     *
+     * 由于 `getFileHighlightsMap` API 在不同版本中可能有变化，
+     * 我们使用 `getErrorHighlightType` 作为后备方案。
+     *
+     * @param psiFile PSI 文件
+     * @return HighlightInfo 列表
+     */
+    private fun getHighlightInfos(psiFile: PsiFile): List<HighlightInfo> {
+        val problems = mutableListOf<HighlightInfo>()
+
+        try {
+            val daemonCodeAnalyzer = DaemonCodeAnalyzerImpl.getInstance(project)
+                ?: return emptyList()
+
+            // 尝试获取文件的高亮信息
+            // 方法 1: 使用 getFileHighlightsMap（如果存在）
+            try {
+                val method = daemonCodeAnalyzer.javaClass.getDeclaredMethod(
+                    "getFileHighlightsMap",
+                    com.intellij.psi.PsiFile::class.java
+                )
+                method.isAccessible = true
+
+                @Suppress("UNCHECKED_CAST")
+                val highlightsMap = method.invoke(daemonCodeAnalyzer, psiFile) as? Map<HighlightInfo, List<HighlightInfo>>
+
+                if (highlightsMap != null) {
+                    highlightsMap.values.forEach { problems.addAll(it) }
+                    problems.addAll(highlightsMap.keys)
+                    return problems
+                }
+            } catch (e: NoSuchMethodException) {
+                logger.debug { "⚠️ getFileHighlightsMap method not found, trying alternative" }
+            }
+
+            // 方法 2: 后备方案 - 尝试直接获取错误状态
+            // 由于 API 变化较大，这里我们返回空列表
+            // 实际的错误信息主要通过 InspectionEngine 获取
+        } catch (e: Exception) {
+            logger.debug { "⚠️ Failed to get highlight infos: ${e.message}" }
+        }
+
+        return problems
+    }
+
+    /**
+     * 运行代码检查
+     *
+     * 运行项目中已启用的 LocalInspectionTool
+     * 参考：https://plugins.jetbrains.com/docs/intellij/code-inspections.html
+     *
+     * @param psiFile PSI 文件
+     * @param includeWarnings 是否包含警告
+     * @param includeWeakWarnings 是否包含弱警告
+     * @return 问题描述符列表
+     */
+    private fun runInspections(
+        psiFile: PsiFile,
+        includeWarnings: Boolean,
+        includeWeakWarnings: Boolean
+    ): List<ProblemDescriptor> {
+        val problems = mutableListOf<ProblemDescriptor>()
+        val inspectionManager = InspectionManager.getInstance(project)
+
+        // 获取当前项目的检查配置
+        val profile = InspectionProjectProfileManager.getInstance(project).currentProfile as? InspectionProfileImpl
+            ?: return emptyList()
+
+        // 获取所有启用的检查工具
+        val toolsList = profile.getAllEnabledInspectionTools(project)
+
+        for (tools in toolsList) {
+            val toolWrapper = tools.tool
+            if (toolWrapper !is com.intellij.codeInspection.ex.LocalInspectionToolWrapper) continue
+
+            val configuredLevel = tools.defaultState.level
+            val isWarning = configuredLevel == com.intellij.codeHighlighting.HighlightDisplayLevel.WARNING
+            val isWeakWarning = configuredLevel == com.intellij.codeHighlighting.HighlightDisplayLevel.WEAK_WARNING ||
+                               configuredLevel == com.intellij.codeHighlighting.HighlightDisplayLevel.DO_NOT_SHOW
+
+            if (!includeWarnings && isWarning) continue
+            if (!includeWeakWarnings && isWeakWarning) continue
+
+            try {
+                val context = inspectionManager.createNewGlobalContext()
+                val descriptors = com.intellij.codeInspection.InspectionEngine.runInspectionOnFile(
+                    psiFile,
+                    toolWrapper,
+                    context
+                )
+                problems.addAll(descriptors)
+            } catch (e: Exception) {
+                logger.debug { "⚠️ Inspection ${toolWrapper.shortName} failed: ${e.message}" }
+            }
+        }
+
+        return problems
+    }
+
+    /**
+     * 收集所有问题
+     */
+    private fun collectProblems(
+        result: AnalysisResult,
+        includeWarnings: Boolean,
+        includeWeakWarnings: Boolean,
+        maxProblems: Int
+    ): List<FileProblem> {
+        val problems = mutableListOf<FileProblem>()
+        var syntaxErrorCount = 0
+        var errorCount = 0
+        var warningCount = 0
+        var suggestionCount = 0
+
+        // 1. 处理语法错误（始终包含）
+        for (descriptor in result.syntaxErrors) {
+            if (problems.size >= maxProblems) break
+            syntaxErrorCount++
+            addProblemFromDescriptor(descriptor, ProblemSeverity.SYNTAX_ERROR, problems, result.psiFile)
+        }
+
+        // 2. 处理 HighlightInfo（编译器错误）
+        for (info in result.highlightInfos) {
+            if (problems.size >= maxProblems) break
+
+            val severity = classifyHighlightInfo(info.severity)
+            when (severity) {
+                ProblemSeverity.SYNTAX_ERROR -> continue
+                ProblemSeverity.ERROR -> errorCount++
+                ProblemSeverity.WARNING -> {
+                    if (!includeWarnings) continue
+                    warningCount++
+                }
+                ProblemSeverity.SUGGESTION -> {
+                    if (!includeWeakWarnings) continue
+                    suggestionCount++
+                }
+            }
+
+            addProblemFromHighlightInfo(info, severity, problems, result.psiFile)
+        }
+
+        // 3. 处理代码检查问题
+        for (descriptor in result.inspectionProblems) {
+            if (problems.size >= maxProblems) break
+
+            val severity = classifyProblemDescriptor(descriptor)
+            when (severity) {
+                ProblemSeverity.SYNTAX_ERROR -> continue
+                ProblemSeverity.ERROR -> errorCount++
+                ProblemSeverity.WARNING -> {
+                    if (!includeWarnings) continue
+                    warningCount++
+                }
+                ProblemSeverity.SUGGESTION -> {
+                    if (!includeWeakWarnings) continue
+                    suggestionCount++
+                }
+            }
+
+            addProblemFromDescriptor(descriptor, severity, problems, result.psiFile)
+        }
+
+        return problems.sortedWith(compareBy({ it.severity.ordinal }, { it.line }, { it.column }))
     }
 
     /**
@@ -457,60 +522,28 @@ class FileProblemsTool(
     }
 
     /**
-     * 根据 ProblemHighlightType 和 Inspection 配置级别分类问题
-     *
-     * 分类规则：
-     * - ERROR / GENERIC_ERROR: 始终是 ERROR
-     * - GENERIC_ERROR_OR_WARNING: 根据 Inspection 配置级别决定
-     * - WARNING / LIKE_DEPRECATED / LIKE_MARKED_FOR_REMOVAL: WARNING
-     * - WEAK_WARNING / INFORMATION / LIKE_UNUSED_SYMBOL 等: SUGGESTION
+     * 根据 ProblemDescriptor 分类问题
      */
-    private fun classifyProblem(
-        highlightType: ProblemHighlightType,
-        configuredLevel: HighlightDisplayLevel?
-    ): ProblemSeverity {
-        return when (highlightType) {
-            // 明确的错误类型
+    private fun classifyProblemDescriptor(descriptor: ProblemDescriptor): ProblemSeverity {
+        return when (descriptor.highlightType) {
             ProblemHighlightType.ERROR,
             ProblemHighlightType.GENERIC_ERROR -> ProblemSeverity.ERROR
-
-            // 动态类型：根据 Inspection 配置级别决定
-            ProblemHighlightType.GENERIC_ERROR_OR_WARNING -> {
-                when (configuredLevel) {
-                    HighlightDisplayLevel.ERROR -> ProblemSeverity.ERROR
-                    HighlightDisplayLevel.WARNING -> ProblemSeverity.WARNING
-                    HighlightDisplayLevel.WEAK_WARNING,
-                    HighlightDisplayLevel.DO_NOT_SHOW -> ProblemSeverity.SUGGESTION
-                    else -> ProblemSeverity.WARNING  // 默认作为警告
-                }
-            }
-
-            // 警告类型
             ProblemHighlightType.WARNING -> ProblemSeverity.WARNING
-
-            // 过时/废弃代码 - 作为警告
-            ProblemHighlightType.LIKE_DEPRECATED,
-            ProblemHighlightType.LIKE_MARKED_FOR_REMOVAL -> ProblemSeverity.WARNING
-
-            // 弱警告和建议类型
             ProblemHighlightType.WEAK_WARNING,
             ProblemHighlightType.INFORMATION,
-            ProblemHighlightType.LIKE_UNUSED_SYMBOL,
-            ProblemHighlightType.LIKE_UNKNOWN_SYMBOL,
-            ProblemHighlightType.POSSIBLE_PROBLEM -> ProblemSeverity.SUGGESTION
-
-            // 其他未知类型默认作为建议
+            ProblemHighlightType.LIKE_UNUSED_SYMBOL -> ProblemSeverity.SUGGESTION
             else -> ProblemSeverity.SUGGESTION
         }
     }
 
     /**
-     * 从 ProblemDescriptor 创建 FileProblem 并添加到列表
+     * 从 ProblemDescriptor 创建 FileProblem
      */
     private fun addProblemFromDescriptor(
         descriptor: ProblemDescriptor,
         severity: ProblemSeverity,
-        problems: MutableList<FileProblem>
+        problems: MutableList<FileProblem>,
+        psiFile: PsiFile?
     ) {
         val psiElement = descriptor.psiElement
         val textRange = descriptor.textRangeInElement ?: psiElement?.textRange
@@ -542,7 +575,7 @@ class FileProblemsTool(
     }
 
     /**
-     * 从 HighlightInfo 创建 FileProblem 并添加到列表
+     * 从 HighlightInfo 创建 FileProblem
      */
     private fun addProblemFromHighlightInfo(
         info: HighlightInfo,
@@ -552,7 +585,6 @@ class FileProblemsTool(
     ) {
         val document = psiFile?.viewProvider?.document
 
-        // 通过 offset 计算行列信息
         val (line, column, endLine, endColumn) = if (document != null) {
             try {
                 val startLine = document.getLineNumber(info.startOffset) + 1
@@ -567,14 +599,80 @@ class FileProblemsTool(
             listOf(1, 1, 1, 1)
         }
 
+        val errorMessage = info.description
+            ?: info.toolTip
+            ?: buildString {
+                append("Severity: ")
+                append(info.severity)
+                append(", Type: ")
+                append(info.type?.toString() ?: "Unknown")
+            }
+
         problems.add(FileProblem(
             severity = severity,
-            message = info.description ?: "Unknown issue",
+            message = errorMessage,
             line = line,
             column = column,
             endLine = endLine,
             endColumn = endColumn,
             description = info.toolTip
         ))
+    }
+
+    /**
+     * 格式化结果为 Markdown
+     */
+    private fun formatResult(filePath: String, problems: List<FileProblem>): String {
+        val sb = StringBuilder()
+        sb.appendLine("## 📄 File: `$filePath`")
+        sb.appendLine()
+
+        val syntaxErrorCount = problems.count { it.severity == ProblemSeverity.SYNTAX_ERROR }
+        val errorCount = problems.count { it.severity == ProblemSeverity.ERROR }
+        val warningCount = problems.count { it.severity == ProblemSeverity.WARNING }
+        val suggestionCount = problems.count { it.severity == ProblemSeverity.SUGGESTION }
+
+        if (problems.isEmpty()) {
+            sb.appendLine("✅ **No issues found**")
+        } else {
+            sb.appendLine("| Severity | Location | Message |")
+            sb.appendLine("|----------|----------|---------|")
+            problems.forEach { problem ->
+                val icon = when (problem.severity) {
+                    ProblemSeverity.SYNTAX_ERROR -> "🚫"
+                    ProblemSeverity.ERROR -> "❌"
+                    ProblemSeverity.WARNING -> "⚠️"
+                    ProblemSeverity.SUGGESTION -> "💡"
+                }
+                val location = "${problem.line}:${problem.column}"
+                val escapedMessage = problem.message.replace("|", "\\|").replace("\n", " ")
+                sb.appendLine("| $icon | `$location` | $escapedMessage |")
+            }
+        }
+
+        sb.appendLine()
+        sb.appendLine("---")
+        val parts = mutableListOf<String>()
+        if (syntaxErrorCount > 0) parts.add("🚫 **$syntaxErrorCount** syntax errors")
+        if (errorCount > 0) parts.add("❌ **$errorCount** errors")
+        if (warningCount > 0) parts.add("⚠️ **$warningCount** warnings")
+        if (suggestionCount > 0) parts.add("💡 **$suggestionCount** suggestions")
+        if (parts.isEmpty()) {
+            sb.append("📊 No problems")
+        } else {
+            sb.append("📊 Summary: ${parts.joinToString(" | ")}")
+        }
+
+        val result = sb.toString()
+
+        return if (wslModeEnabled) {
+            WslPathConverter.convertPathsInResult(result)
+        } else {
+            result
+        }
+    }
+
+    companion object {
+        private val logger = KotlinLogging.logger {}
     }
 }

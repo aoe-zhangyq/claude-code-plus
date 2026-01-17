@@ -40,7 +40,7 @@ class LocaleService {
       'ko-KR': 'ko',
       'ja-JP': 'ja'
     }
-    return localeMap[this.getLocale()] || 'en'
+    return localeMap[this.getLocale()] || 'zh-cn'
   }
 
   /**

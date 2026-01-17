@@ -2,7 +2,7 @@
  * vue-i18n 配置
  *
  * 语言同步策略：
- * - 浏览器环境：localStorage > 浏览器语言 > 默认 en-US
+ * - 浏览器环境：localStorage > 浏览器语言 > 默认 zh-CN
  * - IDEA 环境 + 主题同步：同步 IDEA 语言设置
  * - IDEA 环境 + 无主题同步：使用 localStorage（用户自选）
  */
@@ -26,12 +26,12 @@ export function normalizeLocale(locale: string): SupportedLocale {
   if (normalized.startsWith('zh')) return 'zh-CN'
   if (normalized.startsWith('ko')) return 'ko-KR'
   if (normalized.startsWith('ja')) return 'ja-JP'
-  return 'en-US'
+  return 'zh-CN'
 }
 
 // 检测浏览器语言
 function detectBrowserLocale(): SupportedLocale {
-  if (typeof window === 'undefined') return 'en-US'
+  if (typeof window === 'undefined') return 'zh-CN'
 
   // 优先使用 localStorage 保存的语言
   const savedLocale = localStorage.getItem(LOCALE_STORAGE_KEY)
@@ -40,14 +40,14 @@ function detectBrowserLocale(): SupportedLocale {
   }
 
   // 其次检测浏览器语言
-  const browserLang = navigator.language || (navigator as any).userLanguage || 'en-US'
+  const browserLang = navigator.language || (navigator as any).userLanguage || 'zh-CN'
   return normalizeLocale(browserLang)
 }
 
 export const i18n = createI18n({
   legacy: false, // 使用 Composition API 模式
   locale: detectBrowserLocale(),
-  fallbackLocale: 'en-US',
+  fallbackLocale: 'zh-CN',
   messages: {
     'zh-CN': zhCN,
     'en-US': enUS,

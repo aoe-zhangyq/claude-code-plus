@@ -325,6 +325,46 @@ object McpDefaults {
       }
     },
     "required": ["filePath"]
+  },
+
+  "FileBuild": {
+    "type": "object",
+    "description": "Run IDEA build (File menu: Reload All from Disk + Build menu: Build). Equivalent to 'Build Project' - only recompiles modified files. Much faster than Maven. IMPORTANT: ALWAYS use mcp__jetbrains__FileProblems BEFORE calling this tool to check for static analysis issues first.",
+    "properties": {
+      "filePaths": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Specific files to compile (relative to project root). If not provided, compiles the entire project scope."
+      },
+      "scope": {
+        "type": "string",
+        "enum": ["project", "module"],
+        "description": "Build scope: 'project' for all, 'module' for production code only",
+        "default": "project"
+      },
+      "maxErrors": {
+        "type": "integer",
+        "description": "Maximum number of errors to return",
+        "default": 50,
+        "minimum": 1
+      },
+      "forceRebuild": {
+        "type": "boolean",
+        "description": "Force clean rebuild by deleting output directories before building",
+        "default": false
+      },
+      "fastMode": {
+        "type": "boolean",
+        "description": "Fast mode: skip global VFS refresh, only refresh specified files. Automatically enabled when filePaths is provided. Set to false to force global refresh even with filePaths.",
+        "default": false
+      },
+      "skipWarnings": {
+        "type": "boolean",
+        "description": "Skip collecting warning messages to reduce post-build processing time. Only errors are collected. Set to false to include warnings in the output.",
+        "default": true
+      }
+    },
+    "required": []
   }
 }
     """.trimIndent()
@@ -925,6 +965,153 @@ Tools for interacting with IDEA's VCS/Git integration:
 
     // 向后兼容：保留旧的常量
     val GIT_INSTRUCTIONS = GIT_INSTRUCTIONS_EN
+
+    /**
+     * Compile MCP 工具 Schema（JSON 格式）
+     */
+    val COMPILE_TOOLS_SCHEMA = """
+{
+  "FileBuild": {
+    "type": "object",
+    "description": "Run IDEA build (File menu: Reload All from Disk + Build menu: Build). Equivalent to 'Build Project' - only recompiles modified files. Much faster than Maven. IMPORTANT: ALWAYS use mcp__jetbrains__FileProblems BEFORE calling this tool to check for static analysis issues first.",
+    "properties": {
+      "filePaths": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Specific files to compile (relative to project root). If not provided, compiles the entire project scope."
+      },
+      "scope": {
+        "type": "string",
+        "enum": ["project", "module"],
+        "description": "Build scope: 'project' for all, 'module' for production code only",
+        "default": "project"
+      },
+      "maxErrors": {
+        "type": "integer",
+        "description": "Maximum number of errors to return",
+        "default": 50,
+        "minimum": 1
+      },
+      "forceRebuild": {
+        "type": "boolean",
+        "description": "Force clean rebuild by deleting output directories before building",
+        "default": false
+      },
+      "fastMode": {
+        "type": "boolean",
+        "description": "Fast mode: skip global VFS refresh, only refresh specified files. Automatically enabled when filePaths is provided. Set to false to force global refresh even with filePaths.",
+        "default": false
+      },
+      "skipWarnings": {
+        "type": "boolean",
+        "description": "Skip collecting warning messages to reduce post-build processing time. Only errors are collected. Set to false to include warnings in the output.",
+        "default": true
+      }
+    },
+    "required": []
+  },
+
+  "MavenCompile": {
+    "type": "object",
+    "description": "Run Maven build in offline mode. Skips dependency checks for faster builds. Use for FINAL validation - catches cross-file dependency issues that IDEA may miss. IMPORTANT: ALWAYS use mcp__jetbrains__FileProblems AND mcp__jetbrains__FileBuild BEFORE calling this tool.",
+    "properties": {
+      "goals": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Maven goals to run (e.g., ['compile'], ['test'], ['package'])",
+        "default": ["compile"]
+      },
+      "offline": {
+        "type": "boolean",
+        "description": "Run in offline mode (-o flag). Skips dependency checks for faster builds.",
+        "default": true
+      },
+      "quiet": {
+        "type": "boolean",
+        "description": "Quiet output (-q flag). Shows only errors.",
+        "default": true
+      },
+      "batchMode": {
+        "type": "boolean",
+        "description": "Batch mode (-B flag). Non-interactive, suitable for CI.",
+        "default": true
+      },
+      "timeout": {
+        "type": "integer",
+        "description": "Timeout in seconds",
+        "default": 300,
+        "minimum": 30
+      }
+    },
+    "required": []
+  }
+}
+    """.trimIndent()
+
+    /**
+     * Compile MCP 默认提示词（英文）
+     */
+    private val COMPILE_INSTRUCTIONS_EN = """
+### Build & Validation Tools
+
+Execute in order: **FileProblems → FileBuild → MavenCompile**
+
+Every step is mandatory. Do not skip any.
+
+**Tools:**
+- `mcp__jetbrains__FileProblems`: Static analysis (syntax, type errors) - instant feedback
+- `mcp__jetbrains__FileBuild`: IDEA incremental build (Build Project) - seconds
+- `mcp__compile__MavenCompile`: Maven offline build - minutes (final validation)
+
+**NEVER use Bash to run `mvn compile` or `gradle build`. ALWAYS use the MCP tools.**
+
+**Execution Order (mandatory):**
+
+1. Call `mcp__jetbrains__FileProblems` to check for static issues
+2. Call `mcp__jetbrains__FileBuild` to run IDEA compilation
+3. Call `mcp__compile__MavenCompile` to run Maven validation
+
+**If any step fails, fix errors and restart from step 1.**
+    """.trimIndent()
+
+    /**
+     * Compile MCP 默认提示词（中文）
+     */
+    private val COMPILE_INSTRUCTIONS_ZH = """
+### 构建与验证工具
+
+按顺序执行：**FileProblems → FileBuild → MavenCompile**
+
+每一步都必须执行，不能跳过。
+
+**工具说明：**
+- `mcp__jetbrains__FileProblems`：静态分析（语法、类型错误）- 即时反馈
+- `mcp__jetbrains__FileBuild`：IDEA 增量编译（Build Project）- 秒级
+- `mcp__compile__MavenCompile`：Maven 离线构建 - 分钟级（最终验证）
+
+**禁止使用 Bash 执行 `mvn compile` 或 `gradle build`。必须使用 MCP 工具。**
+
+**执行顺序（必须遵守）：**
+
+1. 调用 `mcp__jetbrains__FileProblems` 检查静态问题
+2. 调用 `mcp__jetbrains__FileBuild` 运行 IDEA 编译
+3. 调用 `mcp__compile__MavenCompile` 运行 Maven 验证
+
+**任何步骤失败，都需修复后从步骤 1 重新开始。**
+    """.trimIndent()
+
+    /**
+     * 获取 Compile MCP 默认提示词
+     */
+    fun getCompileInstructions(language: String): String {
+        return when (language) {
+            "zh" -> COMPILE_INSTRUCTIONS_ZH
+            else -> COMPILE_INSTRUCTIONS_EN
+        }
+    }
+
+    // 向后兼容：保留旧的常量
+    val COMPILE_INSTRUCTIONS = COMPILE_INSTRUCTIONS_EN
 }
 
 /**
@@ -957,9 +1144,17 @@ object KnownTools {
         "mcp__jetbrains__CodeSearch",     // 代码内容搜索
         "mcp__jetbrains__DirectoryTree",  // 目录结构
         "mcp__jetbrains__FileProblems",   // 静态分析
+        "mcp__jetbrains__FileBuild",      // IDEA 构建项目（Reload All + Build）
         "mcp__jetbrains__FindUsages",     // 查找引用
         "mcp__jetbrains__Rename",         // 重命名重构
         "mcp__jetbrains__ReadFile"        // 读取文件（支持 JAR/反编译）
+    )
+
+    /**
+     * Compile MCP 工具
+     */
+    val COMPILE_MCP = listOf(
+        "mcp__compile__MavenCompile"      // Maven 离线构建（最终验证）
     )
 
     /**
@@ -987,7 +1182,7 @@ object KnownTools {
     /**
      * 所有已知工具
      */
-    val ALL = CLAUDE_BUILT_IN + JETBRAINS_MCP + TERMINAL_MCP + GIT_MCP
+    val ALL = CLAUDE_BUILT_IN + JETBRAINS_MCP + COMPILE_MCP + TERMINAL_MCP + GIT_MCP
 }
 
 /**

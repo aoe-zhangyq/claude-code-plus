@@ -41,6 +41,8 @@ import com.asakii.server.mcp.TerminalMcpServerProvider
 import com.asakii.server.mcp.DefaultTerminalMcpServerProvider
 import com.asakii.server.mcp.GitMcpServerProvider
 import com.asakii.server.mcp.DefaultGitMcpServerProvider
+import com.asakii.server.mcp.CompileMcpServerProvider
+import com.asakii.server.mcp.DefaultCompileMcpServerProvider
 import com.asakii.server.rsocket.ProtoConverter.toProto
 import io.rsocket.kotlin.ktor.server.RSocketSupport
 import io.rsocket.kotlin.ktor.server.rSocket
@@ -132,6 +134,7 @@ class HttpApiServer(
     private val jetBrainsMcpServerProvider: JetBrainsMcpServerProvider = DefaultJetBrainsMcpServerProvider,  // JetBrains MCP Server Provider
     private val terminalMcpServerProvider: TerminalMcpServerProvider = DefaultTerminalMcpServerProvider,  // Terminal MCP Server Provider
     private val gitMcpServerProvider: GitMcpServerProvider = DefaultGitMcpServerProvider,  // Git MCP Server Provider
+    private val compileMcpServerProvider: CompileMcpServerProvider = DefaultCompileMcpServerProvider,  // Compile MCP Server Provider
     private val serviceConfigProvider: () -> com.asakii.server.config.AiAgentServiceConfig = { com.asakii.server.config.AiAgentServiceConfig() }  // 服务配置提供者（每次 connect 时调用获取最新配置）
 ) : com.asakii.bridge.EventBridge {
     private val json = Json {
@@ -219,6 +222,7 @@ class HttpApiServer(
                         jetBrainsMcpServerProvider = jetBrainsMcpServerProvider,
                         terminalMcpServerProvider = terminalMcpServerProvider,
                         gitMcpServerProvider = gitMcpServerProvider,
+                        compileMcpServerProvider = compileMcpServerProvider,
                         serviceConfigProvider = { currentConfig }
                     )
 
@@ -553,6 +557,7 @@ class HttpApiServer(
                                 clientCaller = null,
                                 jetBrainsMcpServerProvider = jetBrainsMcpServerProvider,
                                 terminalMcpServerProvider = terminalMcpServerProvider,
+                                compileMcpServerProvider = compileMcpServerProvider,
                                 gitMcpServerProvider = gitMcpServerProvider
                             )
                             val result = rpcService.getHistorySessions(maxResults, offset)
@@ -610,6 +615,7 @@ class HttpApiServer(
                                 ideTools = ideTools,
                                 clientCaller = null,
                                 jetBrainsMcpServerProvider = jetBrainsMcpServerProvider,
+                                compileMcpServerProvider = compileMcpServerProvider,
                                 terminalMcpServerProvider = terminalMcpServerProvider,
                                 gitMcpServerProvider = gitMcpServerProvider
                             )
@@ -636,6 +642,7 @@ class HttpApiServer(
                             val rpcService = AiAgentRpcServiceImpl(
                                 ideTools = ideTools,
                                 clientCaller = null,
+                                compileMcpServerProvider = compileMcpServerProvider,
                                 jetBrainsMcpServerProvider = jetBrainsMcpServerProvider,
                                 terminalMcpServerProvider = terminalMcpServerProvider,
                                 gitMcpServerProvider = gitMcpServerProvider

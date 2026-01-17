@@ -70,7 +70,7 @@ function getElementPlusLocale(locale: string) {
     'ko-KR': koKr,
     'ja-JP': jaJp
   }
-  return localeMap[locale] || en
+  return localeMap[locale] || zhCn
 }
 
 async function initApp() {
@@ -114,7 +114,7 @@ initApp().catch((error) => {
   app.use(pinia)
   app.use(i18n)  // 确保 i18n 也被注册
   app.use(ElementPlus, {
-    locale: en,
+    locale: zhCn,
     size: 'default',
     zIndex: 3000
   })

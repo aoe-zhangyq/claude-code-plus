@@ -53,6 +53,8 @@ import com.asakii.server.mcp.TerminalMcpServerProvider
 import com.asakii.server.mcp.DefaultTerminalMcpServerProvider
 import com.asakii.server.mcp.GitMcpServerProvider
 import com.asakii.server.mcp.DefaultGitMcpServerProvider
+import com.asakii.server.mcp.CompileMcpServerProvider
+import com.asakii.server.mcp.DefaultCompileMcpServerProvider
 import com.asakii.server.logging.StandaloneLogging
 import com.asakii.server.logging.asyncInfo
 import com.asakii.server.settings.ClaudeSettingsLoader
@@ -90,6 +92,7 @@ class AiAgentRpcServiceImpl(
     private val ideTools: IdeTools,
     private val clientCaller: ClientCaller? = null,
     private val jetBrainsMcpServerProvider: JetBrainsMcpServerProvider = DefaultJetBrainsMcpServerProvider,
+    private val compileMcpServerProvider: CompileMcpServerProvider = DefaultCompileMcpServerProvider,
     private val terminalMcpServerProvider: TerminalMcpServerProvider = DefaultTerminalMcpServerProvider,
     private val gitMcpServerProvider: GitMcpServerProvider = DefaultGitMcpServerProvider,
     private val serviceConfigProvider: () -> AiAgentServiceConfig = { AiAgentServiceConfig() },
@@ -98,6 +101,8 @@ class AiAgentRpcServiceImpl(
 
     // 使用 server.log 专用 logger（SDK 日志）
     private val sdkLog = KotlinLogging.logger(StandaloneLogging.SDK_LOGGER)
+    // 调试用普通 logger（输出到 idea.log）
+    private val debugLog = KotlinLogging.logger {}
     private val jsonPretty = Json { prettyPrint = true; ignoreUnknownKeys = true }
     private val sessionId = UUID.randomUUID().toString()
     private val messageHistory = mutableListOf<RpcMessage>()
@@ -648,6 +653,16 @@ class AiAgentRpcServiceImpl(
             }
         } else {
             sdkLog.info("⏭️ [buildClaudeOverrides] Git MCP Server 已禁用")
+        }
+
+        // 添加 Compile MCP Server（如果启用且可用）
+        if (defaults.enableCompileMcp) {
+            compileMcpServerProvider.getServer()?.let { compileMcp ->
+                mcpServers["compile"] = compileMcp
+                sdkLog.info("✅ [buildClaudeOverrides] 已添加 Compile MCP Server")
+            } ?: sdkLog.warn("⚠️ [buildClaudeOverrides] compileMcpServerProvider.getServer() returned null")
+        } else {
+            sdkLog.info("⏭️ [buildClaudeOverrides] Compile MCP Server 已禁用")
         }
 
         // 添加从配置文件加载的 MCP 服务器

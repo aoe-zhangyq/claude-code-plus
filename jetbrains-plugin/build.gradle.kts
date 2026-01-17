@@ -180,6 +180,7 @@ dependencies {
     testImplementation("io.mockk:mockk:1.13.8")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
     testImplementation(kotlin("test-junit5"))
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${rootProject.extra["coroutinesVersion"]}")
 }
 
 // 从 CHANGELOG.md 提取最新版本的变更日志

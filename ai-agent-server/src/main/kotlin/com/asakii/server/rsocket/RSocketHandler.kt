@@ -10,6 +10,8 @@ import com.asakii.server.mcp.DefaultTerminalMcpServerProvider
 import com.asakii.server.mcp.TerminalMcpServerProvider
 import com.asakii.server.mcp.DefaultGitMcpServerProvider
 import com.asakii.server.mcp.GitMcpServerProvider
+import com.asakii.server.mcp.DefaultCompileMcpServerProvider
+import com.asakii.server.mcp.CompileMcpServerProvider
 import com.asakii.server.rpc.AiAgentRpcServiceImpl
 import com.asakii.server.rpc.ClientCaller
 import com.asakii.server.rsocket.ProtoConverter.toProto
@@ -67,6 +69,7 @@ class RSocketHandler(
     private val jetBrainsMcpServerProvider: JetBrainsMcpServerProvider = DefaultJetBrainsMcpServerProvider,  // JetBrains MCP Server Provider
     private val terminalMcpServerProvider: TerminalMcpServerProvider = DefaultTerminalMcpServerProvider,  // Terminal MCP Server Provider
     private val gitMcpServerProvider: GitMcpServerProvider = DefaultGitMcpServerProvider,  // Git MCP Server Provider
+    private val compileMcpServerProvider: CompileMcpServerProvider = DefaultCompileMcpServerProvider,  // Compile MCP Server Provider
     private val serviceConfigProvider: () -> com.asakii.server.config.AiAgentServiceConfig = { com.asakii.server.config.AiAgentServiceConfig() }  // 服务配置提供者（每次 connect 时获取最新配置）
 ) {
     // 使用 ws.log 专用 logger
@@ -91,12 +94,16 @@ class RSocketHandler(
         // 创建 ClientCaller（初始时 requester 可能为空）
         val clientCaller = createClientCaller(callIdCounter)
 
+        // 调试：检查 provider 类型
+        wsLog.info("🔍 [RSocket] compileMcpServerProvider type: ${compileMcpServerProvider.javaClass.simpleName}")
+
         // 为每个连接创建独立的 RPC 服务（传递 MCP Server Providers 和服务配置提供者）
         val rpcService: AiAgentRpcService = AiAgentRpcServiceImpl(
             ideTools = ideTools,
             clientCaller = clientCaller,
             jetBrainsMcpServerProvider = jetBrainsMcpServerProvider,
             terminalMcpServerProvider = terminalMcpServerProvider,
+            compileMcpServerProvider = compileMcpServerProvider,
             gitMcpServerProvider = gitMcpServerProvider,
             serviceConfigProvider = serviceConfigProvider
         )

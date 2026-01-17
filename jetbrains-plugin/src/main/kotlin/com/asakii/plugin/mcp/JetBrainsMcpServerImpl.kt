@@ -41,6 +41,7 @@ class JetBrainsMcpServerImpl(private val project: Project) : McpServerBase() {
     private lateinit var findUsagesTool: FindUsagesTool
     private lateinit var renameTool: RenameTool
     private lateinit var readFileTool: ReadFileTool
+    private lateinit var fileBuildTool: FileBuildTool
 
     override fun getSystemPromptAppendix(): String {
         val baseInstructions = AgentSettingsService.getInstance().effectiveJetbrainsInstructions
@@ -68,7 +69,8 @@ class JetBrainsMcpServerImpl(private val project: Project) : McpServerBase() {
         "CodeSearch",
         "FindUsages",
         "Rename",
-        "ReadFile"
+        "ReadFile",
+        "FileBuild"
     )
 
     companion object {
@@ -153,6 +155,7 @@ class JetBrainsMcpServerImpl(private val project: Project) : McpServerBase() {
             findUsagesTool = FindUsagesTool(project, wslModeEnabled)
             renameTool = RenameTool(project, wslModeEnabled)
             readFileTool = ReadFileTool(project, wslModeEnabled)
+            fileBuildTool = FileBuildTool(project, wslModeEnabled)
             logger.info { "✅ All tool instances created" }
 
             // 注册目录树工具（使用预加载的 Schema）
@@ -204,7 +207,14 @@ class JetBrainsMcpServerImpl(private val project: Project) : McpServerBase() {
                 readFileTool.execute(arguments)
             }
 
-            logger.info { "✅ JetBrains MCP Server initialized, registered 7 tools" }
+            // 注册文件构建工具
+            val fileBuildSchema = getToolSchema("FileBuild")
+            logger.info { "📝 FileBuild schema: ${fileBuildSchema.keys}" }
+            registerToolFromSchema("FileBuild", fileBuildSchema) { arguments ->
+                fileBuildTool.execute(arguments)
+            }
+
+            logger.info { "✅ JetBrains MCP Server initialized, registered 8 tools" }
         } catch (e: Exception) {
             logger.error(e) { "❌ Failed to initialize JetBrains MCP Server: ${e.message}" }
             throw e

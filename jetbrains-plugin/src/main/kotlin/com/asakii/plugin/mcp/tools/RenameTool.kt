@@ -18,6 +18,8 @@ import com.intellij.refactoring.rename.RenameProcessor
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import java.io.File
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 private val logger = KotlinLogging.logger {}
@@ -116,7 +118,10 @@ class RenameTool(
         val resultRef = AtomicReference<Any>()
 
         try {
-            ApplicationManager.getApplication().invokeAndWait {
+            // 检查当前是否在 EDT 上，避免在协程中死锁
+            val application = ApplicationManager.getApplication()
+            if (application.isDispatchThread) {
+                // 已经在 EDT 上，直接执行
                 val result = performRename(
                     absolutePath = absolutePath,
                     newName = newName,
@@ -127,6 +132,24 @@ class RenameTool(
                     searchInStrings = searchInStrings
                 )
                 resultRef.set(result)
+            } else {
+                // 在后台线程，使用 invokeLater + CompletableFuture 切换到 EDT
+                // 避免 invokeAndWait 的 WriteIntentReadAction 限制
+                val future = CompletableFuture<Unit>()
+                application.invokeLater {
+                    val result = performRename(
+                        absolutePath = absolutePath,
+                        newName = newName,
+                        line = line,
+                        column = column,
+                        symbolType = symbolType,
+                        searchInComments = searchInComments,
+                        searchInStrings = searchInStrings
+                    )
+                    resultRef.set(result)
+                    future.complete(Unit)
+                }
+                future.get(30, TimeUnit.SECONDS)
             }
         } catch (e: Exception) {
             return ToolResult.error("Rename failed: ${e.message}")

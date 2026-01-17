@@ -108,6 +108,7 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var terminalAvailableShells: String = "",      // Terminal 可用 shell 列表（逗号分隔，空 = 全部）
         var terminalReadTimeout: Int = 10,             // TerminalRead 默认超时时间（秒）
         var enableGitMcp: Boolean = false,             // Git MCP（VCS 集成，默认禁用）
+        var enableCompileMcp: Boolean = true,          // Compile MCP（增量编译工具，默认启用）
 
         // MCP 系统提示词（自定义，空字符串表示使用默认值）
         var userInteractionInstructions: String = "",
@@ -115,6 +116,7 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var context7Instructions: String = "",
         var terminalInstructions: String = "",
         var gitInstructions: String = "",
+        var compileInstructions: String = "",
 
         // Git Generate 功能配置
         var gitGenerateSystemPrompt: String = "",     // Git Generate 系统提示词
@@ -374,6 +376,14 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
     var gitInstructions: String
         get() = state.gitInstructions
         set(value) { state.gitInstructions = value }
+
+    var enableCompileMcp: Boolean
+        get() = state.enableCompileMcp
+        set(value) { state.enableCompileMcp = value }
+
+    var compileInstructions: String
+        get() = state.compileInstructions
+        set(value) { state.compileInstructions = value }
 
     // Git Generate 配置属性
     var gitGenerateSystemPrompt: String

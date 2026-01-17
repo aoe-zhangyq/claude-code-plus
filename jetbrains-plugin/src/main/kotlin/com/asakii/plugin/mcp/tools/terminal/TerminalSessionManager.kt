@@ -1,5 +1,7 @@
 package com.asakii.plugin.mcp.tools.terminal
 
+import com.asakii.claude.agent.sdk.utils.ShellPathType
+import com.asakii.claude.agent.sdk.utils.WslPathConverter
 import com.asakii.settings.AgentSettingsService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -11,7 +13,9 @@ import com.asakii.plugin.compat.TerminalCompat
 import com.asakii.plugin.compat.TerminalWidgetWrapper
 import com.asakii.plugin.compat.createShellWidget
 import org.jetbrains.plugins.terminal.TerminalToolWindowFactory
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 private val logger = Logger.getInstance("com.asakii.plugin.mcp.tools.terminal.TerminalSessionManager")
@@ -213,12 +217,25 @@ class TerminalSessionManager(private val project: Project) {
 
             var wrapper: TerminalWidgetWrapper? = null
 
-            ApplicationManager.getApplication().invokeAndWait {
+            // 使用 invokeLater + CompletableFuture 避免 invokeAndWait 的 WriteIntentReadAction 限制
+            val future = CompletableFuture<Unit>()
+            ApplicationManager.getApplication().invokeLater {
                 try {
                     val basePath = project.basePath ?: System.getProperty("user.home")
 
+                    // 根据目标 shell 类型转换工作目录路径
+                    // 这确保 Git Bash 和 WSL 终端使用正确的路径格式
+                    val shellPathType = WslPathConverter.inferPathTypeFromShell(actualShellName)
+                    val workingDirectory = if (shellPathType != ShellPathType.WINDOWS) {
+                        val convertedPath = WslPathConverter.convertPathForShell(basePath, shellPathType)
+                        logger.info("  Converted working directory: $basePath → $convertedPath (shellType=$shellPathType)")
+                        convertedPath
+                    } else {
+                        basePath
+                    }
+
                     // 使用兼容层创建终端（传递 shellCommand 以指定 shell 类型）
-                    wrapper = createShellWidget(project, basePath, sessionName, shellCommand)
+                    wrapper = createShellWidget(project, workingDirectory, sessionName, shellCommand)
 
                     if (wrapper == null) {
                         logger.warn("Failed to create TerminalWidgetWrapper")
@@ -227,8 +244,11 @@ class TerminalSessionManager(private val project: Project) {
                     throw e
                 } catch (e: Exception) {
                     logger.error("Failed to create terminal widget", e)
+                } finally {
+                    future.complete(Unit)
                 }
             }
+            future.get(10, TimeUnit.SECONDS)
 
             wrapper?.let { w ->
                 val session = TerminalSession(
@@ -291,9 +311,31 @@ class TerminalSessionManager(private val project: Project) {
         return try {
             session.lastCommandAt = System.currentTimeMillis()
 
-            ApplicationManager.getApplication().invokeAndWait {
-                session.widgetWrapper.executeCommand(command)
+            // ============================================================================
+            // 命令路径转换功能 (2025-01-17)
+            // ============================================================================
+            //
+            // 修复问题: Git Bash/WSL 终端中命令参数使用 Windows 路径格式时无法正确识别
+            // 示例: Bash type "D:\path\file.txt" 在 Git Bash 中应转换为 type "/d/path/file.txt"
+            //
+            // 如果需要回退此功能，注释掉下方三行转换代码即可
+            //
+            // 相关文件: claude-agent-sdk/.../WslPathConverter.kt
+            // 回退方式: 设置 WslPathConverter.FEATURE_FLAG_COMMAND_PATH_CONVERSION = false
+            // ============================================================================
+            val shellPathType = WslPathConverter.inferPathTypeFromShell(session.shellType)
+            val convertedCommand = WslPathConverter.convertPathsInCommand(command, shellPathType)
+            if (convertedCommand != command) {
+                logger.info("  [Command Path Conversion] $command → $convertedCommand")
             }
+
+            // 使用 invokeLater + CompletableFuture 避免 invokeAndWait 的 WriteIntentReadAction 限制
+            val future = CompletableFuture<Unit>()
+            ApplicationManager.getApplication().invokeLater {
+                session.widgetWrapper.executeCommand(convertedCommand)
+                future.complete(Unit)
+            }
+            future.get(5, TimeUnit.SECONDS)
 
             ExecuteResult(
                  success = true,
@@ -339,9 +381,20 @@ class TerminalSessionManager(private val project: Project) {
             session.isBackground = background
             session.lastCommandAt = System.currentTimeMillis()
 
-            ApplicationManager.getApplication().invokeAndWait {
-                session.widgetWrapper.executeCommand(command)
+            // 命令路径转换 (与 executeCommandAsync 保持一致)
+            val shellPathType = WslPathConverter.inferPathTypeFromShell(session.shellType)
+            val convertedCommand = WslPathConverter.convertPathsInCommand(command, shellPathType)
+            if (convertedCommand != command) {
+                logger.info("  [Command Path Conversion] $command → $convertedCommand")
             }
+
+            // 使用 invokeLater + CompletableFuture 避免 invokeAndWait 的 WriteIntentReadAction 限制
+            val future = CompletableFuture<Unit>()
+            ApplicationManager.getApplication().invokeLater {
+                session.widgetWrapper.executeCommand(convertedCommand)
+                future.complete(Unit)
+            }
+            future.get(5, TimeUnit.SECONDS)
 
             if (background) {
                 // 后台执行：立即返回
@@ -562,10 +615,14 @@ class TerminalSessionManager(private val project: Project) {
         return try {
             val wasRunning = session.hasRunningCommands()
 
-            ApplicationManager.getApplication().invokeAndWait {
+            // 使用 invokeLater + CompletableFuture 避免 invokeAndWait 的 WriteIntentReadAction 限制
+            val future = CompletableFuture<Unit>()
+            ApplicationManager.getApplication().invokeLater {
                 // 发送 Ctrl+C (ASCII 3, ETX)
                 session.widgetWrapper.sendInterrupt()
+                future.complete(Unit)
             }
+            future.get(2, TimeUnit.SECONDS)
 
             // 等待命令停止
             Thread.sleep(100)
