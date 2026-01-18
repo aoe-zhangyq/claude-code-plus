@@ -50,6 +50,7 @@ data class ClaudeDefaults(
     val enableTerminalMcp: Boolean = false,
     val enableGitMcp: Boolean = false,
     val enableCompileMcp: Boolean = true,  // Compile MCP（增量编译工具）
+    val enableWebSearchInstructions: Boolean = true,  // 联网检索提示（提醒模型使用 WebSearch 工具）
     // MCP 服务器配置（从资源文件加载，由 plugin 模块传入）
     val mcpServersConfig: List<McpServerConfig> = emptyList(),
     // MCP 系统提示词（由 plugin 模块加载并传入）

@@ -24,7 +24,7 @@ private val logger = KotlinLogging.logger {}
  * 提供 Maven 最终验证功能：
  * - Maven 离线编译：最终验证，适合提交前检查
  *
- * 注意：FileBuild (IDEA 构建项目) 已移至 JetBrains MCP 服务器
+ * 注意：IDEA 构建功能已合并到 FileProblems (JetBrains MCP) 中
  *
  * WSL 模式支持：
  * 当启用 WSL 模式时，工具会自动转换路径格式。

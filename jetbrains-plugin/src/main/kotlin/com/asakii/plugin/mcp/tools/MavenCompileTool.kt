@@ -26,8 +26,8 @@ private val logger = KotlinLogging.logger {}
 /**
  * Maven 离线编译工具
  *
- * 使用 Maven 离线模式编译，跳过依赖检查，速度比完整编译快。
- * 适合最终验证阶段使用。
+ * 使用 Maven 离线模式编译，跳过依赖检查。Maven 默认使用增量编译，
+ * 只编译修改过的文件。
  *
  * @param project IDEA 项目
  * @param wslModeEnabled 是否启用 WSL 模式
@@ -70,6 +70,8 @@ class MavenCompileTool(
 
     /**
      * 运行 Maven 构建
+     *
+     * Maven 默认使用增量编译，只编译修改过的文件
      */
     private suspend fun runMavenBuild(
         goals: List<String>,
@@ -96,6 +98,12 @@ class MavenCompileTool(
         if (offline) commandLine.addParameter("-o")
         if (quiet) commandLine.addParameter("-q")
         if (batchMode) commandLine.addParameter("-B")
+
+        // 注意：Maven 默认就是增量编译，无需额外参数
+        // 以下参数无效或已废弃，不要使用：
+        // - -Dmaven.compiler.useIncrementalCompilation=true (3.x有效但默认已是true，4.x已废弃)
+        // - -Dmaven.incrementalCompilation=true (从未存在，完全无效)
+
         commandLine.addParameters(goals)
 
         logger.debug { "🔨 Command: ${commandLine.commandLineString}" }

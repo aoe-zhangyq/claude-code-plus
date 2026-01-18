@@ -142,6 +142,7 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
 
     // General Tab 组件
     private var defaultBypassPermissionsCheckbox: JBCheckBox? = null
+    private var enableWebSearchInstructionsCheckbox: JBCheckBox? = null
     private var promptLanguageCombo: ComboBox<String>? = null
     private var nodePathField: TextFieldWithBrowseButton? = null
     private var wslModeEnabledCheckbox: JBCheckBox? = null
@@ -246,6 +247,13 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         }
         panel.add(createLabeledRow("Mode:", permissionModeCombo!!))
         panel.add(createDescription("  default = Ask for each action | bypassPermissions = Auto-approve all actions"))
+
+        enableWebSearchInstructionsCheckbox = JBCheckBox("Enable external knowledge instructions").apply {
+            toolTipText = "Remind Claude it can search the internet (WebSearch) and query library docs (Context7)"
+            alignmentX = JPanel.LEFT_ALIGNMENT
+        }
+        panel.add(enableWebSearchInstructionsCheckbox)
+        panel.add(createDescription("  └ Append system prompt to remind Claude it can search the internet for docs, repositories, StackOverflow, etc."))
 
         includePartialMessagesCheckbox = JBCheckBox("Include partial messages in stream").apply {
             toolTipText = "Include partial/streaming messages in the response (always enabled)"
@@ -1013,7 +1021,8 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
             (thinkTokensSpinner?.value as? Int ?: 2048) != settings.thinkTokens ||
             (ultraTokensSpinner?.value as? Int ?: 8096) != settings.ultraTokens ||
             permissionModeCombo?.selectedItem != settings.permissionMode ||
-            defaultBypassPermissionsCheckbox?.isSelected != settings.defaultBypassPermissions
+            defaultBypassPermissionsCheckbox?.isSelected != settings.defaultBypassPermissions ||
+            enableWebSearchInstructionsCheckbox?.isSelected != settings.enableWebSearchInstructions
 
         // Agents Tab
         val currentConfig = parseAgentsConfig(settings.customAgents)
@@ -1068,6 +1077,7 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         settings.permissionMode = permissionModeCombo?.selectedItem as? String ?: "default"
         settings.includePartialMessages = true
         settings.defaultBypassPermissions = defaultBypassPermissionsCheckbox?.isSelected ?: false
+        settings.enableWebSearchInstructions = enableWebSearchInstructionsCheckbox?.isSelected ?: true
 
         // Agents Tab
         val selectedAgentModel = exploreModelCombo?.selectedItem as? String ?: "(inherit)"
@@ -1122,6 +1132,7 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         permissionModeCombo?.selectedItem = settings.permissionMode
         includePartialMessagesCheckbox?.isSelected = true
         defaultBypassPermissionsCheckbox?.isSelected = settings.defaultBypassPermissions
+        enableWebSearchInstructionsCheckbox?.isSelected = settings.enableWebSearchInstructions
 
         // Agents Tab
         val currentConfig = parseAgentsConfig(settings.customAgents)
@@ -1164,6 +1175,7 @@ class ClaudeCodeConfigurable : SearchableConfigurable {
         permissionModeCombo = null
         includePartialMessagesCheckbox = null
         defaultBypassPermissionsCheckbox = null
+        enableWebSearchInstructionsCheckbox = null
         // Custom Models
         customModelsTable = null
         customModelsTableModel = null

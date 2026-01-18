@@ -187,6 +187,7 @@ class HttpServerProjectService(private val project: Project) : Disposable {
                         enableTerminalMcp = settings.enableTerminalMcp,
                         enableGitMcp = settings.enableGitMcp,
                         enableCompileMcp = settings.enableCompileMcp,
+                        enableWebSearchInstructions = settings.enableWebSearchInstructions,
                         mcpServersConfig = loadMcpServersConfig(settings),
                         mcpInstructions = loadMcpInstructions(settings),
                         dangerouslySkipPermissions = settings.defaultBypassPermissions,
@@ -329,6 +330,12 @@ class HttpServerProjectService(private val project: Project) : Disposable {
         if (settings.enableContext7Mcp) {
             instructions.add(settings.effectiveContext7Instructions)
             logger.info("📝 Loaded Context7 MCP instructions")
+        }
+
+        // 联网检索指令
+        if (settings.enableWebSearchInstructions) {
+            instructions.add(McpDefaults.getWebSearchInstructions(settings.promptLanguage))
+            logger.info("📝 Loaded WebSearch instructions")
         }
 
         return instructions.takeIf { it.isNotEmpty() }?.joinToString("\n\n")

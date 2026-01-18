@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.*
  *
  * 测试 AI 是否按照预期使用 Compile 工具：
  * 1. 代码输出阶段：不调用编译工具
- * 2. 验证阶段：按照 FileProblems → FileBuild → MavenCompile 的顺序
+ * 2. 验证阶段：按照 FileProblems → MavenCompile 的顺序
  *
  * 使用方法：
  * 1. 确保 CLAUDE_API_KEY 环境变量已设置
@@ -196,23 +196,16 @@ private fun analyzeResults(toolCallSequence: List<String>, codeEditBlocks: List<
 
     checks.add("编译工具在代码编辑后调用" to (firstCompileIndex > firstCodeEditIndex || firstCompileIndex == -1))
 
-    // 检查 2: FileProblems 是否在 FileBuild 之前
+    // 检查 2: FileProblems 是否在 MavenCompile 之前
     val fileProblemsIndex = toolCallSequence.indexOf("FileProblems")
-    val fileBuildIndex = toolCallSequence.indexOfFirst { it.contains("FileBuild") }
-
-    if (fileProblemsIndex >= 0 && fileBuildIndex >= 0) {
-        checks.add("FileProblems 在 FileBuild 之前" to (fileProblemsIndex < fileBuildIndex))
-    }
-
-    // 检查 3: FileBuild 是否在 MavenCompile 之前
     val mavenCompileIndex = toolCallSequence.indexOfFirst { it.contains("MavenCompile") }
 
-    if (fileBuildIndex >= 0 && mavenCompileIndex >= 0) {
-        checks.add("FileBuild 在 MavenCompile 之前" to (fileBuildIndex < mavenCompileIndex))
+    if (fileProblemsIndex >= 0 && mavenCompileIndex >= 0) {
+        checks.add("FileProblems 在 MavenCompile 之前" to (fileProblemsIndex < mavenCompileIndex))
     }
 
-    // 检查 4: 是否使用了 Compile 工具
-    val usedCompileTools = toolCallSequence.any { it.contains("Compile") }
+    // 检查 3: 是否使用了 Compile 工具
+    val usedCompileTools = toolCallSequence.any { it.contains("Compile") || it.contains("FileProblems") }
     checks.add("使用了至少一个编译工具" to usedCompileTools)
 
     // 打印结果

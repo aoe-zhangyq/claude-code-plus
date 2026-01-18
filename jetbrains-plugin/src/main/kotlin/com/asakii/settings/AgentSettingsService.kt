@@ -100,7 +100,7 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var enableJetBrainsMcp: Boolean = true,        // JetBrains IDE MCP（IDE 索引工具）
         var enableContext7Mcp: Boolean = false,        // Context7 MCP（获取最新库文档）
         var context7ApiKey: String = "",               // Context7 API Key（可选）
-        var enableTerminalMcp: Boolean = false,        // Terminal MCP（IDEA 内置终端，默认禁用）
+        var enableTerminalMcp: Boolean = false,         // Terminal MCP（IDEA 内置终端，默认禁用）
         var terminalDisableBuiltinBash: Boolean = true, // 启用 Terminal MCP 时禁用内置 Bash
         var terminalMaxOutputLines: Int = 500,         // Terminal 输出最大行数
         var terminalMaxOutputChars: Int = 50000,       // Terminal 输出最大字符数
@@ -109,6 +109,7 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var terminalReadTimeout: Int = 10,             // TerminalRead 默认超时时间（秒）
         var enableGitMcp: Boolean = false,             // Git MCP（VCS 集成，默认禁用）
         var enableCompileMcp: Boolean = true,          // Compile MCP（增量编译工具，默认启用）
+        var enableWebSearchInstructions: Boolean = true, // 联网检索提示（提醒模型使用 WebSearch 工具，默认启用）
 
         // MCP 系统提示词（自定义，空字符串表示使用默认值）
         var userInteractionInstructions: String = "",
@@ -384,6 +385,10 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
     var compileInstructions: String
         get() = state.compileInstructions
         set(value) { state.compileInstructions = value }
+
+    var enableWebSearchInstructions: Boolean
+        get() = state.enableWebSearchInstructions
+        set(value) { state.enableWebSearchInstructions = value }
 
     // Git Generate 配置属性
     var gitGenerateSystemPrompt: String

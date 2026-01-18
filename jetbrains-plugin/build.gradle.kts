@@ -328,7 +328,7 @@ intellijPlatform {
 fun getDefaultShell(): String {
     val osName = System.getProperty("os.name").lowercase()
     return when {
-        osName.contains("windows") -> "powershell.exe"
+        osName.contains("windows") -> "cmd.exe"
         else -> System.getenv("SHELL") ?: "/bin/sh"
     }
 }
@@ -339,7 +339,7 @@ fun getDefaultShell(): String {
 fun shellCommand(command: String): List<String> {
     val shell = getDefaultShell()
     return when {
-        shell.contains("powershell") -> listOf(shell, "-Command", command)
+        shell.contains("cmd") -> listOf(shell, "/c", command)
         else -> listOf(shell, "-c", command)
     }
 }

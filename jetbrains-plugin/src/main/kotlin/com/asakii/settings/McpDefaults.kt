@@ -161,27 +161,8 @@ object McpDefaults {
 
   "FileProblems": {
     "type": "object",
-    "description": "Get static analysis results for a file, including compilation errors, warnings and code inspection issues. Automatically refreshes VFS to detect external file modifications.",
+    "description": "Fast PSI syntax error analysis. Scans all source files for SEVERE syntax errors only (unclosed strings, bracket mismatches, etc.). Does NOT detect type errors, missing extends, or dependency issues - use MavenCompile for full validation. Default refresh=false for speed.",
     "properties": {
-      "filePath": {
-        "type": "string",
-        "description": "File path relative to project root"
-      },
-      "includeWarnings": {
-        "type": "boolean",
-        "description": "Include warnings",
-        "default": true
-      },
-      "includeSuggestions": {
-        "type": "boolean",
-        "description": "Include suggestions/weak warnings",
-        "default": false
-      },
-      "includeWeakWarnings": {
-        "type": "boolean",
-        "description": "Deprecated: use includeSuggestions instead",
-        "default": false
-      },
       "maxProblems": {
         "type": "integer",
         "description": "Maximum number of problems to return",
@@ -190,11 +171,11 @@ object McpDefaults {
       },
       "refresh": {
         "type": "boolean",
-        "description": "Refresh VFS before analysis to ensure file modifications are detected. Recommended after editing files.",
-        "default": true
+        "description": "Refresh VFS before analysis. Set to true after editing files to ensure modifications are detected.",
+        "default": false
       }
     },
-    "required": ["filePath"]
+    "required": []
   },
 
   "FindUsages": {
@@ -325,46 +306,6 @@ object McpDefaults {
       }
     },
     "required": ["filePath"]
-  },
-
-  "FileBuild": {
-    "type": "object",
-    "description": "Run IDEA build (File menu: Reload All from Disk + Build menu: Build). Equivalent to 'Build Project' - only recompiles modified files. Much faster than Maven. IMPORTANT: ALWAYS use mcp__jetbrains__FileProblems BEFORE calling this tool to check for static analysis issues first.",
-    "properties": {
-      "filePaths": {
-        "type": "array",
-        "items": { "type": "string" },
-        "description": "Specific files to compile (relative to project root). If not provided, compiles the entire project scope."
-      },
-      "scope": {
-        "type": "string",
-        "enum": ["project", "module"],
-        "description": "Build scope: 'project' for all, 'module' for production code only",
-        "default": "project"
-      },
-      "maxErrors": {
-        "type": "integer",
-        "description": "Maximum number of errors to return",
-        "default": 50,
-        "minimum": 1
-      },
-      "forceRebuild": {
-        "type": "boolean",
-        "description": "Force clean rebuild by deleting output directories before building",
-        "default": false
-      },
-      "fastMode": {
-        "type": "boolean",
-        "description": "Fast mode: skip global VFS refresh, only refresh specified files. Automatically enabled when filePaths is provided. Set to false to force global refresh even with filePaths.",
-        "default": false
-      },
-      "skipWarnings": {
-        "type": "boolean",
-        "description": "Skip collecting warning messages to reduce post-build processing time. Only errors are collected. Set to false to include warnings in the output.",
-        "default": true
-      }
-    },
-    "required": []
   }
 }
     """.trimIndent()
@@ -456,7 +397,7 @@ object McpDefaults {
 You have access to JetBrains IDE tools that leverage the IDE's powerful indexing and analysis capabilities:
 
 - `mcp__jetbrains__DirectoryTree`: Browse project directory structure with filtering options
-- `mcp__jetbrains__FileProblems`: Get static analysis results for a file (syntax errors, code errors, warnings, suggestions). Auto-refreshes VFS by default.
+- `mcp__jetbrains__FileProblems`: Analyze the entire project for syntax errors using PSI analysis. Scans all source files for parsing errors (missing semicolons, bracket mismatches, etc.). Fast but does NOT detect type errors.
 - `mcp__jetbrains__FileIndex`: Search files, classes, and symbols using IDE index (supports scope filtering)
 - `mcp__jetbrains__CodeSearch`: Search code content across project files (like Find in Files)
 - `mcp__jetbrains__FindUsages`: Find all references/usages of a symbol (class, method, field, variable) in the project
@@ -473,21 +414,21 @@ CRITICAL: You MUST use JetBrains tools instead of Glob/Grep. DO NOT use Glob or 
 **Problem**: Files modified via this plugin may not be immediately detected by IDEA's VFS.
 
 **When to use FileProblems**:
-- After writing/editing files: `FileProblems` will auto-refresh (default behavior)
-- After batch modifications: Call `FileProblems` on each modified file
+- After writing/editing files: Call `FileProblems()` to quickly check for syntax errors
+- For full validation (including type errors): Use `MavenCompile()` after syntax check
 - Pure problem checking (no modifications): Use `FileProblems(refresh=false)` to skip VFS refresh
 
 **Validation workflow**:
-1. After any code modification → `FileProblems(filePath="...")`  (refresh=true by default)
-2. Review and fix any reported errors
-3. Run `FileProblems` again to confirm fixes
+1. After any code modification → `FileProblems()`  (fast syntax check)
+2. Review and fix any syntax errors
+3. Run `MavenCompile()` for full validation (type checking, dependencies)
 
 ### Refactoring Workflow
 
 When renaming symbols:
 1. Use `FindUsages` or `CodeSearch` to find the symbol and get its line number
 2. Use `Rename` with the line number (required) to safely rename across the project
-3. Use `FileProblems` to validate changes
+3. Use `FileProblems()` to validate changes
 
 Example: `FindUsages(symbolName="getUserById")` → line 42 → `Rename(line=42, newName="fetchUserById")`
 
@@ -516,7 +457,7 @@ Use `FileIndex` + `ReadFile` to read source code from dependencies (JAR files, J
 你可以使用 JetBrains IDE 工具，这些工具利用 IDE 强大的索引和分析能力：
 
 - `mcp__jetbrains__DirectoryTree`：浏览项目目录结构，支持过滤选项
-- `mcp__jetbrains__FileProblems`：获取文件的静态分析结果（语法错误、代码错误、警告、建议）。默认自动刷新 VFS。
+- `mcp__jetbrains__FileProblems`：分析整个项目的语法错误。使用 PSI 分析扫描所有源文件，收集解析错误（如缺少分号、括号不匹配等）。快速但不检测类型错误。
 - `mcp__jetbrains__FileIndex`：使用 IDE 索引搜索文件、类和符号（支持范围过滤）
 - `mcp__jetbrains__CodeSearch`：在项目文件中搜索代码内容（类似"在文件中查找"）
 - `mcp__jetbrains__FindUsages`：查找符号（类、方法、字段、变量）在项目中的所有引用/使用位置
@@ -533,21 +474,21 @@ Use `FileIndex` + `ReadFile` to read source code from dependencies (JAR files, J
 **问题**：通过此插件修改的文件可能无法被 IDEA 的 VFS 立即检测到。
 
 **何时使用 FileProblems**：
-- 写入/编辑文件后：`FileProblems` 会自动刷新（默认行为）
-- 批量修改后：对每个修改的文件调用 `FileProblems`
+- 写入/编辑文件后：调用 `FileProblems()` 快速检查语法错误
+- 完整验证（包括类型错误）：在语法检查后使用 `MavenCompile()`
 - 纯问题检查（无修改）：使用 `FileProblems(refresh=false)` 跳过 VFS 刷新
 
 **验证工作流**：
-1. 任何代码修改后 → `FileProblems(filePath="...")`  （默认 refresh=true）
-2. 查看并修复所有报告的错误
-3. 再次运行 `FileProblems` 确认修复
+1. 任何代码修改后 → `FileProblems()`  （快速语法检查）
+2. 查看并修复语法错误
+3. 运行 `MavenCompile()` 进行完整验证（类型检查、依赖项）
 
 ### 重构工作流
 
 重命名符号时：
 1. 使用 `FindUsages` 或 `CodeSearch` 查找符号并获取其行号
 2. 使用 `Rename` 并提供行号（必需）在整个项目中安全重命名
-3. 使用 `FileProblems` 验证修改
+3. 使用 `FileProblems()` 验证修改
 
 示例：`FindUsages(symbolName="getUserById")` → 第 42 行 → `Rename(line=42, newName="fetchUserById")`
 
@@ -971,49 +912,9 @@ Tools for interacting with IDEA's VCS/Git integration:
      */
     val COMPILE_TOOLS_SCHEMA = """
 {
-  "FileBuild": {
-    "type": "object",
-    "description": "Run IDEA build (File menu: Reload All from Disk + Build menu: Build). Equivalent to 'Build Project' - only recompiles modified files. Much faster than Maven. IMPORTANT: ALWAYS use mcp__jetbrains__FileProblems BEFORE calling this tool to check for static analysis issues first.",
-    "properties": {
-      "filePaths": {
-        "type": "array",
-        "items": { "type": "string" },
-        "description": "Specific files to compile (relative to project root). If not provided, compiles the entire project scope."
-      },
-      "scope": {
-        "type": "string",
-        "enum": ["project", "module"],
-        "description": "Build scope: 'project' for all, 'module' for production code only",
-        "default": "project"
-      },
-      "maxErrors": {
-        "type": "integer",
-        "description": "Maximum number of errors to return",
-        "default": 50,
-        "minimum": 1
-      },
-      "forceRebuild": {
-        "type": "boolean",
-        "description": "Force clean rebuild by deleting output directories before building",
-        "default": false
-      },
-      "fastMode": {
-        "type": "boolean",
-        "description": "Fast mode: skip global VFS refresh, only refresh specified files. Automatically enabled when filePaths is provided. Set to false to force global refresh even with filePaths.",
-        "default": false
-      },
-      "skipWarnings": {
-        "type": "boolean",
-        "description": "Skip collecting warning messages to reduce post-build processing time. Only errors are collected. Set to false to include warnings in the output.",
-        "default": true
-      }
-    },
-    "required": []
-  },
-
   "MavenCompile": {
     "type": "object",
-    "description": "Run Maven build in offline mode. Skips dependency checks for faster builds. Use for FINAL validation - catches cross-file dependency issues that IDEA may miss. IMPORTANT: ALWAYS use mcp__jetbrains__FileProblems AND mcp__jetbrains__FileBuild BEFORE calling this tool.",
+    "description": "Run Maven build in offline mode. Skips dependency checks for faster builds. Use for FINAL validation - catches cross-file dependency issues that IDEA may miss. IMPORTANT: ALWAYS use mcp__jetbrains__FileProblems BEFORE calling this tool to check for static analysis issues first.",
     "properties": {
       "goals": {
         "type": "array",
@@ -1054,22 +955,20 @@ Tools for interacting with IDEA's VCS/Git integration:
     private val COMPILE_INSTRUCTIONS_EN = """
 ### Build & Validation Tools
 
-Execute in order: **FileProblems → FileBuild → MavenCompile**
+Execute in order: **FileProblems → MavenCompile**
 
 Every step is mandatory. Do not skip any.
 
 **Tools:**
-- `mcp__jetbrains__FileProblems`: Static analysis (syntax, type errors) - instant feedback
-- `mcp__jetbrains__FileBuild`: IDEA incremental build (Build Project) - seconds
-- `mcp__compile__MavenCompile`: Maven offline build - minutes (final validation)
+- `mcp__jetbrains__FileProblems`: Fast PSI syntax check - detects SEVERE syntax errors only (unclosed strings, bracket mismatches). Does NOT detect type errors.
+- `mcp__compile__MavenCompile`: Maven offline build - full validation including type checking and dependencies
 
 **NEVER use Bash to run `mvn compile` or `gradle build`. ALWAYS use the MCP tools.**
 
 **Execution Order (mandatory):**
 
-1. Call `mcp__jetbrains__FileProblems` to check for static issues
-2. Call `mcp__jetbrains__FileBuild` to run IDEA compilation
-3. Call `mcp__compile__MavenCompile` to run Maven validation
+1. Call `mcp__jetbrains__FileProblems` to check for syntax errors (fast)
+2. Call `mcp__compile__MavenCompile` to run full Maven validation
 
 **If any step fails, fix errors and restart from step 1.**
     """.trimIndent()
@@ -1080,22 +979,20 @@ Every step is mandatory. Do not skip any.
     private val COMPILE_INSTRUCTIONS_ZH = """
 ### 构建与验证工具
 
-按顺序执行：**FileProblems → FileBuild → MavenCompile**
+按顺序执行：**FileProblems → MavenCompile**
 
 每一步都必须执行，不能跳过。
 
 **工具说明：**
-- `mcp__jetbrains__FileProblems`：静态分析（语法、类型错误）- 即时反馈
-- `mcp__jetbrains__FileBuild`：IDEA 增量编译（Build Project）- 秒级
-- `mcp__compile__MavenCompile`：Maven 离线构建 - 分钟级（最终验证）
+- `mcp__jetbrains__FileProblems`：快速 PSI 语法检查 - 仅检测严重语法错误（字符串未闭合、括号不匹配等）。不检测类型错误。
+- `mcp__compile__MavenCompile`：Maven 离线构建 - 完整验证，包括类型检查和依赖项
 
 **禁止使用 Bash 执行 `mvn compile` 或 `gradle build`。必须使用 MCP 工具。**
 
 **执行顺序（必须遵守）：**
 
-1. 调用 `mcp__jetbrains__FileProblems` 检查静态问题
-2. 调用 `mcp__jetbrains__FileBuild` 运行 IDEA 编译
-3. 调用 `mcp__compile__MavenCompile` 运行 Maven 验证
+1. 调用 `mcp__jetbrains__FileProblems` 检查语法错误（快速）
+2. 调用 `mcp__compile__MavenCompile` 运行完整 Maven 验证
 
 **任何步骤失败，都需修复后从步骤 1 重新开始。**
     """.trimIndent()
@@ -1112,6 +1009,148 @@ Every step is mandatory. Do not skip any.
 
     // 向后兼容：保留旧的常量
     val COMPILE_INSTRUCTIONS = COMPILE_INSTRUCTIONS_EN
+
+    /**
+     * 联网检索提示默认提示词（英文）
+     *
+     * 提醒模型在不确定 API 时可以使用联网检索工具查找官方文档
+     */
+    private val WEB_SEARCH_INSTRUCTIONS_EN = """
+### External Knowledge Sources
+
+When you need information beyond the current codebase, use these MCP tools:
+
+**1. WebSearch (MCP: `web-search-prime`)** - Search the entire internet to discover and locate information sources
+- Official documentation and API references
+- StackOverflow discussions and solutions
+- Technical blogs and articles
+- Release notes and changelogs
+- Best for: Finding relevant sources and URLs
+
+**2. WebReader (MCP: `web-reader`, `web_reader`)** - Deep URL reader that fetches and converts full page content to markdown
+- Complete article content extraction
+- Documentation page parsing
+- Blog post reading with image support
+- Best for: Reading full content from URLs discovered via WebSearch
+
+**3. Zread (MCP: `zread`)** - GitHub/GitLab/Gitee repository reader
+- Repository search (`search_doc`)
+- Repository structure analysis (`get_repo_structure`)
+- File reading within repos (`read_file`)
+- Best for: Finding implementations, examples, and source code in open-source projects
+- Note: Use `zread` for GitHub repos, NOT `chrome-devtools`
+
+**4. Context7 MCP** - Third-party library documentation (when enabled)
+- Up-to-date library API docs
+- Code examples and best practices
+- Concepts and guides for popular frameworks
+- Best for: Quick lookup of library APIs and usage patterns
+
+**5. Vision MCP (MCP: `zai-mcp-server`, `4_5v_mcp`)** - Visual understanding capabilities
+- Screenshot OCR text extraction
+- Error dialog diagnosis from screenshots
+- Technical diagram understanding (UML, flowcharts, architecture diagrams)
+- Data visualization analysis (charts, dashboards)
+- UI diff comparison and screenshot-to-code conversion
+- Video analysis support
+- Best for: Understanding visual content, debugging from screenshots, analyzing diagrams
+
+**6. Chrome DevTools (MCP: `chrome-devtools`)** - Browser automation and debugging
+- Browser automation (click, fill forms, navigate)
+- Page screenshots and performance analysis
+- Script execution and console access
+- Best for: Testing web applications, browser automation, performance debugging
+
+**Usage workflow:**
+1. **Discover** sources: Use `web-search-prime` to find relevant URLs/repositories
+2. **Read** content: Use `web-reader` for full page content, `zread` for repo files
+3. **Query** libraries: Use Context7 for third-party library APIs
+4. **Analyze** visuals: Use `zai-mcp-server` or `4_5v_mcp` for screenshots, diagrams
+5. **Automate browser**: Use `chrome-devtools` for web testing and automation
+
+**Guidelines:**
+- Proactively search when uncertain about APIs - don't wait for the user to remind you
+- Prefer official docs over forums when available
+- Include search sources in your responses (e.g., "Source: [URL]")
+- For code examples, prefer `zread` (source code) over `web-reader` (documentation)
+- For GitHub repos specifically, use `zread`, NOT `chrome-devtools`
+    """.trimIndent()
+
+    /**
+     * 联网检索提示默认提示词（中文）
+     *
+     * 提醒模型在不确定 API 时可以使用联网检索工具查找官方文档
+     */
+    private val WEB_SEARCH_INSTRUCTIONS_ZH = """
+### 外部知识来源
+
+当需要获取代码库之外的信息时，使用以下 MCP 工具：
+
+**1. WebSearch (MCP: `web-search-prime`)** - 搜索整个互联网，发现和定位信息源
+- 官方文档和 API 参考
+- StackOverflow 讨论和解决方案
+- 技术博客和文章
+- 发布说明和更新日志
+- 最佳用途：查找相关来源和 URL
+
+**2. WebReader (MCP: `web-reader`, `web_reader`)** - 深度URL阅读器，获取完整页面内容并转换为markdown
+- 完整文章内容提取
+- 文档页面解析
+- 博客文章阅读（支持图片）
+- 最佳用途：读取通过 WebSearch 发现的 URL 的完整内容
+
+**3. Zread (MCP: `zread`)** - GitHub/GitLab/Gitee 仓库读取工具
+- 仓库搜索 (`search_doc`)
+- 仓库结构分析 (`get_repo_structure`)
+- 仓库内文件读取 (`read_file`)
+- 最佳用途：在开源项目中查找实现、示例和源代码
+- 注意：搜索 GitHub 仓库使用 `zread`，不要用 `chrome-devtools`
+
+**4. Context7 MCP** - 第三方库文档（启用时可用）
+- 最新的库 API 文档
+- 代码示例和最佳实践
+- 流行框架的概念和指南
+- 最佳用途：快速查询库 API 和使用模式
+
+**5. Vision MCP (MCP: `zai-mcp-server`, `4_5v_mcp`)** - 视觉理解能力
+- 截图 OCR 文字提取
+- 从截图中诊断错误对话框
+- 技术图纸理解（UML、流程图、架构图）
+- 数据可视化分析（图表、仪表盘）
+- UI 差异对比、截图转代码
+- 视频分析支持
+- 最佳用途：理解视觉内容、从截图调试、分析图表
+
+**6. Chrome DevTools (MCP: `chrome-devtools`)** - 浏览器自动化和调试
+- 浏览器自动化（点击、填充表单、导航）
+- 页面截图和性能分析
+- 脚本执行和控制台访问
+- 最佳用途：Web 应用测试、浏览器自动化、性能调试
+
+**使用流程：**
+1. **发现**来源：使用 `web-search-prime` 查找相关 URL/仓库
+2. **读取**内容：使用 `web-reader` 读取完整网页，使用 `zread` 读取仓库文件
+3. **查询**库文档：使用 Context7 查询第三方库 API
+4. **分析**视觉内容：使用 `zai-mcp-server` 或 `4_5v_mcp` 处理截图、图表
+5. **浏览器自动化**：使用 `chrome-devtools` 进行 Web 测试和自动化
+
+**使用指南：**
+- 对不确定的 API 主动搜索 - 不要等用户提醒
+- 优先使用官方文档而非论坛
+- 响应中注明信息来源（如 "来源: [URL]"）
+- 查找代码示例时，优先使用 `zread`（源代码）而非 `web-reader`（文档）
+- GitHub 仓库搜索请使用 `zread`，不要使用 `chrome-devtools`
+    """.trimIndent()
+
+    /**
+     * 获取联网检索提示默认提示词
+     */
+    fun getWebSearchInstructions(language: String): String {
+        return when (language) {
+            "zh" -> WEB_SEARCH_INSTRUCTIONS_ZH
+            else -> WEB_SEARCH_INSTRUCTIONS_EN
+        }
+    }
 }
 
 /**
@@ -1143,8 +1182,7 @@ object KnownTools {
         "mcp__jetbrains__FileIndex",      // IDE 索引搜索
         "mcp__jetbrains__CodeSearch",     // 代码内容搜索
         "mcp__jetbrains__DirectoryTree",  // 目录结构
-        "mcp__jetbrains__FileProblems",   // 静态分析
-        "mcp__jetbrains__FileBuild",      // IDEA 构建项目（Reload All + Build）
+        "mcp__jetbrains__FileProblems",   // PSI 语法错误分析
         "mcp__jetbrains__FindUsages",     // 查找引用
         "mcp__jetbrains__Rename",         // 重命名重构
         "mcp__jetbrains__ReadFile"        // 读取文件（支持 JAR/反编译）
