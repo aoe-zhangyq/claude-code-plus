@@ -1,11 +1,14 @@
 /**
  * IDEA 通信桥接服务（纯 HTTP 模式）
  * 负责前端与后端的 HTTP 通信
+ * 包含心跳检测机制：5分钟一次，失败后10秒重试，重试3次失败则判定断开
  */
 
 import type { FrontendResponse, IdeEvent } from '@/types/bridge'
 
 type EventHandler = (data: any) => void
+
+type ConnectionStatus = 'connected' | 'disconnected' | 'connecting'
 
 /**
  * IDE 集成选项接口
@@ -37,6 +40,19 @@ class IdeaBridgeService {
   private listeners = new Map<string, Set<EventHandler>>()
   private isReady = false
   private mode: 'ide' | 'browser' = 'browser'
+
+  // 心跳检测相关
+  private connectionStatus: ConnectionStatus = 'connecting'
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private consecutiveFailures = 0
+  private maxRetries = 3
+  private heartbeatInterval = 5 * 60 * 1000 // 5分钟
+  private retryInterval = 10 * 1000 // 10秒
+
+  // 保存原始标题（用于恢复）
+  private originalTitle = ''
+  private currentProjectInfo = '' // 项目信息（用于恢复标题）
 
   // 获取基础 URL：
   // - IDE 插件模式：使用后端注入的 window.__serverUrl（随机端口）
@@ -102,6 +118,150 @@ class IdeaBridgeService {
     this.isReady = true
     console.log('🌐 Bridge Mode: HTTP')
     console.log('🔗 Server URL:', this.getBaseUrl())
+
+    // 保存原始标题并初始化心跳检测
+    this.saveOriginalTitle()
+    this.startHeartbeat()
+  }
+
+  /**
+   * 保存原始网页标题
+   */
+  private saveOriginalTitle() {
+    if (typeof document !== 'undefined') {
+      // 保存当前标题（可能已经包含项目信息）
+      this.originalTitle = document.title
+
+      // 提取项目信息（格式：folderName [projectName] - Claude Code Plus）
+      const match = this.originalTitle.match(/^(.+?) - Claude Code Plus$/)
+      if (match) {
+        this.currentProjectInfo = match[1]
+      } else {
+        this.currentProjectInfo = 'Claude Code Plus'
+      }
+    }
+  }
+
+  /**
+   * 更新网页标题显示连接状态
+   */
+  private updateTitle() {
+    if (typeof document === 'undefined') return
+
+    if (this.connectionStatus === 'disconnected') {
+      document.title = `【已断开】${this.currentProjectInfo} - Claude Code Plus`
+    } else {
+      document.title = `${this.currentProjectInfo} - Claude Code Plus`
+    }
+  }
+
+  /**
+   * 设置连接状态
+   */
+  private setConnectionStatus(status: ConnectionStatus) {
+    const oldStatus = this.connectionStatus
+    this.connectionStatus = status
+
+    if (oldStatus !== status) {
+      console.log(`🔌 Connection status: ${oldStatus} -> ${status}`)
+      this.updateTitle()
+
+      // 触发连接状态变化事件
+      this.dispatchEvent({
+        type: 'connection.status',
+        data: { status, oldStatus }
+      })
+    }
+  }
+
+  /**
+   * 执行心跳检测（ping 后端）
+   */
+  private async doHeartbeat(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.getBaseUrl()}/api/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test.ping' })
+      })
+      return response.ok
+    } catch (error) {
+      console.warn('💔 Heartbeat failed:', error)
+      return false
+    }
+  }
+
+  /**
+   * 开始心跳检测
+   */
+  private startHeartbeat() {
+    // 清除旧的定时器
+    this.stopHeartbeat()
+
+    // 立即执行一次心跳检测
+    this.performHeartbeatCheck()
+
+    // 设置定时心跳
+    this.heartbeatTimer = setInterval(() => {
+      this.performHeartbeatCheck()
+    }, this.heartbeatInterval)
+
+    console.log('💓 Heartbeat started (interval: 5min)')
+  }
+
+  /**
+   * 停止心跳检测
+   */
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer)
+      this.retryTimer = null
+    }
+  }
+
+  /**
+   * 执行心跳检查（包含重试逻辑）
+   */
+  private async performHeartbeatCheck() {
+    const success = await this.doHeartbeat()
+
+    if (success) {
+      // 心跳成功
+      if (this.consecutiveFailures > 0) {
+        console.log('✅ Connection restored after failures')
+      }
+      this.consecutiveFailures = 0
+      this.setConnectionStatus('connected')
+
+      // 清除重试定时器（如果有）
+      if (this.retryTimer) {
+        clearTimeout(this.retryTimer)
+        this.retryTimer = null
+      }
+    } else {
+      // 心跳失败
+      this.consecutiveFailures++
+
+      if (this.consecutiveFailures >= this.maxRetries) {
+        // 达到最大重试次数，判定为断开
+        console.error(`❌ Connection lost after ${this.consecutiveFailures} consecutive failures`)
+        this.setConnectionStatus('disconnected')
+
+        // 继续尝试恢复（但不再快速重试）
+        this.consecutiveFailures = 0 // 重置计数，以便下次检测时能快速重试
+      } else {
+        // 还在重试次数内，10秒后重试
+        console.warn(`⚠️ Heartbeat failed (${this.consecutiveFailures}/${this.maxRetries}), retrying in 10s...`)
+
+        this.retryTimer = setTimeout(() => {
+          this.performHeartbeatCheck()
+        }, this.retryInterval)
+      }
+    }
   }
 
   /**
@@ -273,7 +433,19 @@ export const ideaBridge = {
   getServerPort: () => getIdeaBridge().getServerPort(),
   on: (eventType: string, handler: EventHandler) => getIdeaBridge().on(eventType, handler),
   off: (eventType: string, handler: EventHandler) => getIdeaBridge().off(eventType, handler),
-  waitForReady: () => getIdeaBridge().waitForReady()
+  waitForReady: () => getIdeaBridge().waitForReady(),
+  // 连接状态相关
+  getConnectionStatus: () => getIdeaBridge().getConnectionStatus(),
+  isConnected: () => getIdeaBridge().isConnected()
+}
+
+// 扩展 IdeaBridgeService 类添加公共方法
+;(IdeaBridgeService.prototype as any).getConnectionStatus = function(): ConnectionStatus {
+  return this.connectionStatus
+}
+
+;(IdeaBridgeService.prototype as any).isConnected = function(): boolean {
+  return this.connectionStatus === 'connected'
 }
 
 export async function openFile(filePath: string, options?: OpenFileOptions) {

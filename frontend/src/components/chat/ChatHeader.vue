@@ -16,6 +16,16 @@
 
     <!-- 右侧：功能按钮 -->
     <div class="header-actions">
+      <!-- IDEA 连接状态指示器 -->
+      <div
+        v-if="ideaBridge.isInIde()"
+        class="connection-indicator"
+        :class="connectionStatusClass"
+        :title="connectionStatusText"
+      >
+        <span class="connection-dot"></span>
+      </div>
+
       <button
         class="icon-btn"
         type="button"
@@ -63,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useToastStore } from '@/stores/toastStore'
 import { ConnectionStatus } from '@/types/display'
@@ -71,6 +81,34 @@ import SessionTabs, { type SessionTabInfo } from './SessionTabs.vue'
 import ThemeSwitcher from '@/components/toolbar/ThemeSwitcher.vue'
 import LanguageSwitcher from '@/components/toolbar/LanguageSwitcher.vue'
 import McpStatusPopup from '@/components/toolbar/McpStatusPopup.vue'
+import { ideaBridge } from '@/services/ideaBridge'
+
+// IDEA 连接状态
+const ideaConnectionStatus = ref<'connected' | 'disconnected' | 'connecting'>('connecting')
+
+// IDEA 连接状态文本
+const connectionStatusText = computed(() => {
+  switch (ideaConnectionStatus.value) {
+    case 'connected': return 'IDEA 连接正常'
+    case 'disconnected': return 'IDEA 连接已断开'
+    case 'connecting': return 'IDEA 连接中...'
+  }
+})
+
+// IDEA 连接状态样式类
+const connectionStatusClass = computed(() => {
+  switch (ideaConnectionStatus.value) {
+    case 'connected': return 'status-connected'
+    case 'disconnected': return 'status-disconnected'
+    case 'connecting': return 'status-connecting'
+  }
+})
+
+// 监听 IDEA 连接状态变化事件
+function handleConnectionStatusChange(event: CustomEvent) {
+  const { status } = event.detail
+  ideaConnectionStatus.value = status
+}
 
 // MCP 状态弹窗
 const showMcpStatus = ref(false)
@@ -84,7 +122,6 @@ watch(showMcpStatus, async (visible) => {
     try {
       const result = await sessionStore.currentTab.session.getMcpStatus()
       fetchedMcpServers.value = result.servers
-      console.log('🔌 getMcpStatus result:', result)
     } catch (err) {
       console.error('[ChatHeader] getMcpStatus failed:', err)
     }
@@ -184,6 +221,19 @@ function handleRename(tabId: string, newName: string) {
     }
   }
 }
+
+// 生命周期：监听 IDEA 连接状态变化
+onMounted(() => {
+  // 初始化连接状态
+  ideaConnectionStatus.value = ideaBridge.getConnectionStatus()
+
+  // 监听连接状态变化事件
+  window.addEventListener('ide-event', handleConnectionStatusChange as EventListener)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('ide-event', handleConnectionStatusChange as EventListener)
+})
 </script>
 
 <style scoped>
@@ -203,6 +253,50 @@ function handleRename(tabId: string, newName: string) {
   align-items: center;
   gap: 4px;
   margin-left: 8px;
+}
+
+/* IDEA 连接状态指示器 */
+.connection-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  cursor: help;
+}
+
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 4px currentColor;
+  transition: all 0.3s ease;
+}
+
+.connection-indicator.status-connected .connection-dot {
+  background: #28a745;
+  box-shadow: 0 0 6px #28a745;
+}
+
+.connection-indicator.status-connecting .connection-dot {
+  background: #d39e00;
+  box-shadow: 0 0 6px #d39e00;
+  animation: pulse 1.5s infinite;
+}
+
+.connection-indicator.status-disconnected .connection-dot {
+  background: #dc3545;
+  box-shadow: 0 0 6px #dc3545;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .connection-pill {

@@ -5,6 +5,59 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Code Plus</title>
+  <!-- 🚀 设置网页标题（项目路径+项目名） -->
+  <script>
+    (function() {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        var projectPath = params.get('projectPath');
+        var projectName = params.get('projectName');
+        if (projectPath && projectName) {
+          // 标准化路径分隔符
+          var normalizedPath = projectPath.replace(/\\/g, '/');
+
+          // 去除无区分度的常见字符
+          var noisePatterns = [
+            /^\/mnt\//i,             // WSL 盘符前缀
+            /^[A-Z]:\//i,            // Windows 盘符
+            /^\/+/i,                 // 开头的斜杠
+            /\/Develop\//i,          // Develop
+            /\/Code\//i,             // Code
+            /\/SVN\//i,              // SVN
+            /\/GitHub\//i,           // GitHub
+            /\/Gitee\//i,            // Gitee
+            /\/Gitea\//i,            // Gitea
+            /\/branches\//i,         // branches
+            /\/src\//i,              // src
+            /\/bec\//i,              // bec
+            /\/be\//i                // be
+          ];
+
+          var cleanedPath = normalizedPath;
+          noisePatterns.forEach(function(pattern) {
+            cleanedPath = cleanedPath.replace(pattern, '/');
+          });
+
+          // 去除首尾斜杠并分割
+          var pathParts = cleanedPath.replace(/^\/+|\/+$/g, '').split('/').filter(function(p) {
+            return p && p.trim().length > 0;
+          });
+
+          // 取最后2-3个有意义的部分
+          var meaningfulParts = pathParts.slice(-3);
+
+          // 如果只剩一个部分，使用项目名
+          var displayName = meaningfulParts.length > 0
+            ? meaningfulParts.join('/')
+            : projectName;
+
+          document.title = displayName + ' - Claude Code Plus';
+        }
+      } catch (e) {
+        console.warn('Failed to set page title:', e);
+      }
+    })();
+  </script>
   <!-- 🚀 立即应用初始主题，避免闪烁 -->
   <script>
     (function() {

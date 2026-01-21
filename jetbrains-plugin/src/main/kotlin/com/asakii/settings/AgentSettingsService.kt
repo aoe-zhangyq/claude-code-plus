@@ -159,7 +159,10 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var customAgents: String = "{}",
 
         // 自定义模型列表（JSON 序列化）
-        var customModels: String = "[]"
+        var customModels: String = "[]",
+
+        // 浏览器模式：external=系统浏览器, embedded=IDEA 内置浏览器
+        var browserMode: String = "external"
     )
 
     private var state = State()
@@ -537,6 +540,10 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
     var customModelsJson: String
         get() = state.customModels
         set(value) { state.customModels = value }
+
+    var browserMode: String
+        get() = state.browserMode
+        set(value) { state.browserMode = value }
 
     /**
      * 获取自定义模型列表
