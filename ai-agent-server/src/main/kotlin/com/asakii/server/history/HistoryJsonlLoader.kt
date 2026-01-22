@@ -722,24 +722,61 @@ object HistoryJsonlLoader {
         }
     }
 
+    /**
+     * 构建用户消息的 UiStreamEvent
+     *
+     * 从 JSONL 历史文件的 user 类型条目中提取消息内容，
+     * 转换为前端可显示的 UiUserMessage 格式。
+     *
+     * @param json JSONL 中的单行 JSON 对象（user 类型）
+     * @return UiUserMessage 或 null（如果内容解析失败）
+     */
     private fun buildUserMessage(json: JsonObject): UiStreamEvent? {
+        // 提取消息内容块（text、image 等）
         val contentBlocks = extractContentBlocks(json) ?: return null
+
+        // 解析 uuid：每条历史消息都有唯一标识符
+        // 用途：1) 编辑重发功能定位截断位置 2) 前端消息去重和识别
+        val uuid = json["uuid"]?.jsonPrimitive?.contentOrNull
+
         return UiUserMessage(
             content = contentBlocks,
-            isReplay = null
+            isReplay = null,
+            uuid = uuid
         )
     }
 
+    /**
+     * 构建助手消息的 UiStreamEvent
+     *
+     * 从 JSONL 历史文件的 assistant 类型条目中提取消息内容，
+     * 转换为前端可显示的 UiAssistantMessage 格式。
+     *
+     * @param json JSONL 中的单行 JSON 对象（assistant 类型）
+     * @return UiAssistantMessage 或 null（如果内容解析失败）
+     */
     private fun buildAssistantMessage(json: JsonObject): UiStreamEvent? {
+        // 提取消息内容块（thinking、text、tool_use 等）
         val contentBlocks = extractContentBlocks(json) ?: return null
         val messageObj = json["message"]?.jsonObject
+
+        // 消息 ID：SDK 生成的消息标识符（如 msg_xxx）
+        // 注意：不同于 uuid，id 是消息级别的标识，uuid 是会话级别的唯一标识
         val id = messageObj?.get("id")?.jsonPrimitive?.contentOrNull
-        // 解析 parent_tool_use_id（用于子代理消息路由）
+
+        // 解析 uuid：用于编辑重发功能定位截断位置
+        val uuid = json["uuid"]?.jsonPrimitive?.contentOrNull
+
+        // 解析 parent_tool_use_id：用于子代理消息路由
+        // 如果这条 assistant 消息是某个 Task 工具的子代理生成的，
+        // parent_tool_useId 指向该 Task 的 tool_use_id
         val parentToolUseId = json["parent_tool_use_id"]?.jsonPrimitive?.contentOrNull
+
         return UiAssistantMessage(
             id = id,
             content = contentBlocks,
-            parentToolUseId = parentToolUseId
+            parentToolUseId = parentToolUseId,
+            uuid = uuid
         )
     }
 

@@ -958,10 +958,8 @@ export function useSessionTab(initialOrder: number = 0) {
                 const normalized = normalizeRpcMessage(rawMsg)
                 if (normalized && normalized.kind === 'message') {
                     buffer.push(normalized.data)
-                } else if (normalized && normalized.kind === 'stream_event') {
-                    // 流式事件也需要处理（如有必要）
-                    // 暂时跳过
                 }
+                // stream_event 类型暂时跳过
             }
 
             if (buffer.length > 0) {
