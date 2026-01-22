@@ -8,7 +8,6 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.ide.CopyPasteManager
-import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
@@ -34,7 +33,6 @@ import java.awt.Cursor
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import javax.swing.JComponent
@@ -48,7 +46,6 @@ class NativeToolWindowFactory : ToolWindowFactory, DumbAware {
 
     companion object {
         private val logger = Logger.getInstance(NativeToolWindowFactory::class.java)
-        private var browserOpened = false  // 防止重复打开浏览器
     }
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -116,7 +113,7 @@ class NativeToolWindowFactory : ToolWindowFactory, DumbAware {
         logger.info("🌐 Using external browser mode")
 
         // 显示一个简单的面板，说明正在使用系统浏览器
-        val infoPanel = createExternalBrowserInfoPanel(project, serverUrl)
+        val infoPanel = createExternalBrowserInfoPanel(project, targetUrl)
         val content = contentFactory.createContent(infoPanel, "", false)
         content.isCloseable = false
         toolWindow.contentManager.addContent(content)
@@ -167,18 +164,7 @@ class NativeToolWindowFactory : ToolWindowFactory, DumbAware {
 
         toolWindowEx?.setTitleActions(titleActions)
 
-        // 自动打开系统浏览器（只打开一次）
-        if (!browserOpened) {
-            browserOpened = true
-            // 延迟一点，确保服务器完全启动
-            javax.swing.Timer(500) { _ ->
-                openInBrowser(project, targetUrl)
-                logger.info("✅ Opened external browser: $targetUrl")
-            }.apply {
-                isRepeats = false
-                start()
-            }
-        }
+        // 不再自动打开浏览器，用户需要手动点击工具栏按钮打开
     }
 
     /**
@@ -327,7 +313,7 @@ class NativeToolWindowFactory : ToolWindowFactory, DumbAware {
     /**
      * 创建系统浏览器模式的信息面板（紧凑版）
      */
-    private fun createExternalBrowserInfoPanel(project: Project, serverUrl: String): JComponent {
+    private fun createExternalBrowserInfoPanel(project: Project, targetUrl: String): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout())
         panel.border = JBUI.Borders.empty(16)
         panel.isOpaque = false
@@ -337,7 +323,7 @@ class NativeToolWindowFactory : ToolWindowFactory, DumbAware {
             <div style='text-align: center; padding: 4px;'>
                 <div style='font-size: 16px; color: #FFFFFF; font-weight: 500;'>Claude Code Plus</div>
                 <div style='font-size: 11px; color: #B0B0B0; margin-top: 13px;'>系统浏览器模式</div>
-                <div style='font-size: 10px; color: #4A90E2; margin-top: 10px;'>$serverUrl</div>
+                <div style='font-size: 12px; color: #4A90E2; margin-top: 10px; text-decoration: underline;'>打开会话</div>
             </div>
             </html>
         """.trimIndent()
@@ -351,7 +337,7 @@ class NativeToolWindowFactory : ToolWindowFactory, DumbAware {
         // 点击打开浏览器
         label.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
-                openInBrowser(project, serverUrl)
+                openInBrowser(project, targetUrl)
             }
         })
 
@@ -428,19 +414,120 @@ class NativeToolWindowFactory : ToolWindowFactory, DumbAware {
     }
 
     /**
-     * 在浏览器中打开 URL
+     * 在浏览器中打开 URL（使用 App 模式，无地址栏、无标签栏，更轻量）
      */
     private fun openInBrowser(project: Project, url: String) {
         try {
-            val desktop = java.awt.Desktop.getDesktop()
-            if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
-                desktop.browse(java.net.URI(url))
-            } else {
-                logger.warn("Browser not supported to open: $url")
+            val os = System.getProperty("os.name").lowercase()
+            val browserCmd = when {
+                os.contains("win") -> {
+                    // Windows: 优先使用 Edge（系统自带），然后 Chrome
+                    // 直接调用浏览器 exe，避免 cmd start 的转义问题
+                    when (val edgePath = findEdgePath()) {
+                        null -> when (val chromePath = findChromePath()) {
+                            null -> null
+                            else -> listOf(chromePath, "--app=$url", "--new-window")
+                        }
+                        else -> listOf(edgePath, "--app=$url", "--new-window")
+                    }
+                }
+                os.contains("mac") -> {
+                    // macOS: 优先使用 Safari（无 app 模式），然后 Chrome/Edge
+                    when {
+                        findBrowserPath("/Applications/Google Chrome.app") != null ->
+                            listOf("open", "-n", "-a", "Google Chrome", "--args", "--app=$url")
+                        findBrowserPath("/Applications/Microsoft Edge.app") != null ->
+                            listOf("open", "-n", "-a", "Microsoft Edge", "--args", "--app=$url")
+                        else -> null
+                    }
+                }
+                os.contains("linux") -> {
+                    // Linux: 尝试 google-chrome, chromium-browser, microsoft-edge
+                    when {
+                        findBrowserPath("/usr/bin/google-chrome") != null ||
+                        findBrowserPath("/usr/bin/google-chrome-stable") != null ->
+                            listOf("google-chrome", "--app=$url")
+                        findBrowserPath("/usr/bin/chromium-browser") != null ||
+                        findBrowserPath("/usr/bin/chromium") != null ->
+                            listOf("chromium-browser", "--app=$url")
+                        findBrowserPath("/usr/bin/microsoft-edge") != null ||
+                        findBrowserPath("/usr/bin/microsoft-edge-stable") != null ->
+                            listOf("microsoft-edge", "--app=$url")
+                        else -> null
+                    }
+                }
+                else -> null
             }
-        } catch (e: IOException) {
+
+            if (browserCmd != null) {
+                val pb = ProcessBuilder(browserCmd)
+                pb.redirectErrorStream(true)
+                pb.start()
+                logger.info("✅ Opened browser in app mode: ${browserCmd.takeLast(2)}")
+            } else {
+                // 回退到默认方式
+                logger.warn("⚠️ No Chrome/Edge found, falling back to default browser")
+                val desktop = java.awt.Desktop.getDesktop()
+                if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+                    desktop.browse(java.net.URI(url))
+                }
+            }
+        } catch (e: Exception) {
             logger.warn("Failed to open browser: ${e.message}", e)
+            // 最后的回退
+            try {
+                val desktop = java.awt.Desktop.getDesktop()
+                if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+                    desktop.browse(java.net.URI(url))
+                }
+            } catch (e2: Exception) {
+                logger.warn("Fallback also failed: ${e2.message}")
+            }
         }
+    }
+
+    /**
+     * 查找 Microsoft Edge 浏览器安装路径
+     * 优先级：Program Files → Program Files (x86) → LocalAppData
+     */
+    private fun findEdgePath(): String? {
+        val paths = listOf(
+            "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+            "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+            "${getLocalAppDataPath()}\\Microsoft\\Edge\\Application\\msedge.exe"
+        )
+        return paths.firstOrNull { findBrowserPath(it) != null }
+    }
+
+    /**
+     * 查找 Google Chrome 浏览器安装路径
+     * 优先级：Program Files → LocalAppData
+     */
+    private fun findChromePath(): String? {
+        val paths = listOf(
+            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            "${getLocalAppDataPath()}\\Google\\Chrome\\Application\\chrome.exe"
+        )
+        return paths.firstOrNull { findBrowserPath(it) != null }
+    }
+
+    /**
+     * 检查浏览器路径是否存在
+     */
+    private fun findBrowserPath(path: String): String? {
+        return try {
+            val file = java.io.File(path)
+            if (file.exists()) path else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 获取 Windows LocalAppData 路径
+     */
+    private fun getLocalAppDataPath(): String {
+        return System.getenv("LOCALAPPDATA") ?: "C:\\Users\\${System.getProperty("user.name")}\\AppData\\Local"
     }
 
     /**
