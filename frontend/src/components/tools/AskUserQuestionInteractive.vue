@@ -1,9 +1,14 @@
 <template>
   <div v-if="pendingQuestion" class="ask-user-container">
-    <div class="ask-user-card">
-      <div class="ask-user-header">
-        <span class="ask-user-icon">❓</span>
-        <span class="ask-user-title">{{ $t('askUser.title', 'Claude 需要您的回答') }}</span>
+    <div class="ask-user-card" :class="{ minimized: isMinimized }">
+      <div class="ask-user-header" @click="toggleMinimize">
+        <div class="header-left">
+          <span class="ask-user-icon">❓</span>
+          <span class="ask-user-title">{{ $t('askUser.title', 'Claude 需要您的回答') }}</span>
+        </div>
+        <button class="minimize-btn" :title="isMinimized ? $t('askUser.restore', '还原') : $t('askUser.minimize', '最小化')">
+          {{ isMinimized ? '↑' : '↓' }}
+        </button>
       </div>
 
       <div class="questions-container">
@@ -111,10 +116,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, reactive } from 'vue'
+import { computed, watch, reactive, ref } from 'vue'
 import { useSessionStore } from '@/stores/sessionStore'
 
 const sessionStore = useSessionStore()
+
+// 最小化状态
+const isMinimized = ref(false)
+
+// 切换最小化状态
+function toggleMinimize() {
+  isMinimized.value = !isMinimized.value
+}
 
 const getQuestionKey = (q: { header?: string; question: string }) => q.header || q.question
 
@@ -292,10 +305,46 @@ function handleCancel() {
 .ask-user-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 12px 16px;
   background: var(--theme-accent, #0366d6);
   color: white;
+  cursor: pointer;
+  user-select: none;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.minimize-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  transition: background 0.15s ease;
+  padding: 0;
+}
+
+.minimize-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.ask-user-card.minimized .questions-container,
+.ask-user-card.minimized .ask-user-actions {
+  display: none;
 }
 
 .ask-user-icon {
