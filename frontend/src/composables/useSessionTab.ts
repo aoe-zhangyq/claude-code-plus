@@ -1470,6 +1470,9 @@ export function useSessionTab(initialOrder: number = 0) {
     ): Promise<void> {
         log.info(`[Tab ${tabId}] 🔄 编辑重发: uuid=${uuid}`)
 
+        // 确保连接已建立（修复历史会话恢复时延迟连接导致的"会话未连接"错误）
+        await ensureConnected()
+
         const currentSessionId = sessionId.value
         if (!currentSessionId) {
             throw new Error('会话未连接，无法编辑重发')
