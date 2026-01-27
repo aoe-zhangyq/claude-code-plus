@@ -316,14 +316,13 @@ class AiAgentRpcServiceImpl(
     override suspend fun getHistorySessions(maxResults: Int, offset: Int): RpcHistorySessionsResult {
         sdkLog.info("📋 [AI-Agent] 获取历史会话列表 (offset=$offset, maxResults=$maxResults)")
         val projectPath = ideTools.getProjectPath()
-        val serviceConfig = serviceConfigProvider()
         sdkLog.info("📋 [AI-Agent] 项目路径: $projectPath")
         val sessions = ClaudeSessionScanner.scanHistorySessions(projectPath, maxResults, offset)
         sdkLog.info("📋 [AI-Agent] 找到 ${sessions.size} 个历史会话")
         return RpcHistorySessionsResult(
             sessions = sessions.map { meta ->
                 // 为每个会话加载 customTitle（从 JSONL 文件尾部高效查找）
-                val customTitle = HistoryJsonlLoader.findCustomTitle(meta.sessionId, meta.projectPath, serviceConfig.claude.wslModeEnabled)
+                val customTitle = HistoryJsonlLoader.findCustomTitle(meta.sessionId, meta.projectPath)
                 sdkLog.info("📋 [AI-Agent] 会话 ${meta.sessionId.take(8)}... customTitle=${customTitle ?: "(无)"}")
                 RpcHistorySession(
                     sessionId = meta.sessionId,
@@ -480,13 +479,12 @@ class AiAgentRpcServiceImpl(
     ): RpcHistoryResult {
         val targetSession = sessionId ?: lastConnectOptions?.sessionId ?: this@AiAgentRpcServiceImpl.sessionId
         val project = projectPath?.takeIf { it.isNotBlank() } ?: ideTools.getProjectPath()
-        val serviceConfig = serviceConfigProvider()
 
         // 获取可用的总消息数（快照）
-        val availableCount = HistoryJsonlLoader.countLines(targetSession, project, serviceConfig.claude.wslModeEnabled)
+        val availableCount = HistoryJsonlLoader.countLines(targetSession, project)
 
         // 加载历史消息（List<UiStreamEvent>），使用消息树算法（复刻 CLI 的 Nm 函数）
-        val historyEvents = HistoryJsonlLoader.loadHistoryMessages(targetSession, project, offset, limit, leafUuid, serviceConfig.claude.wslModeEnabled)
+        val historyEvents = HistoryJsonlLoader.loadHistoryMessages(targetSession, project, offset, limit, leafUuid)
 
         // 复用 toRpcMessage() 转换成 RpcMessage
         val rpcMessages = historyEvents.map { uiEvent ->
@@ -508,10 +506,9 @@ class AiAgentRpcServiceImpl(
     ): RpcHistoryMetadata {
         val targetSession = sessionId ?: lastConnectOptions?.sessionId ?: this.sessionId
         val project = projectPath?.takeIf { it.isNotBlank() } ?: ideTools.getProjectPath()
-        val serviceConfig = serviceConfigProvider()
-        val totalLines = HistoryJsonlLoader.countLines(targetSession, project, serviceConfig.claude.wslModeEnabled)
+        val totalLines = HistoryJsonlLoader.countLines(targetSession, project)
         // 从文件尾部高效查找 custom-title（/rename 命令设置的自定义标题）
-        val customTitle = HistoryJsonlLoader.findCustomTitle(targetSession, project, serviceConfig.claude.wslModeEnabled)
+        val customTitle = HistoryJsonlLoader.findCustomTitle(targetSession, project)
 
         return RpcHistoryMetadata(
             totalLines = totalLines,
@@ -528,12 +525,10 @@ class AiAgentRpcServiceImpl(
     ): RpcTruncateHistoryResult {
         sdkLog.info("✂️ [SDK] 截断历史: sessionId=$sessionId, messageUuid=$messageUuid, projectPath=$projectPath")
         return try {
-            val serviceConfig = serviceConfigProvider()
             val remainingLines = HistoryJsonlLoader.truncateHistory(
                 sessionId = sessionId,
                 projectPath = projectPath,
-                messageUuid = messageUuid,
-                wslModeEnabled = serviceConfig.claude.wslModeEnabled
+                messageUuid = messageUuid
             )
             sdkLog.info("✅ [SDK] 历史截断成功: remainingLines=$remainingLines")
             RpcTruncateHistoryResult(
