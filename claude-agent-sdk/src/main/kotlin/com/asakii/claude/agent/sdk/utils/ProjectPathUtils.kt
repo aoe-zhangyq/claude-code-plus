@@ -124,13 +124,54 @@ object ProjectPathUtils {
     }
 
     /**
+     * 检测是否为 Windows 路径（如 C:\..., D:\...）
+     *
+     * @param projectPath 项目路径
+     * @return 是否为 Windows 路径
+     */
+    fun isWindowsPath(projectPath: String): Boolean {
+        // Windows 路径格式：盘符:\
+        return projectPath.length >= 3 &&
+            projectPath[1] == ':' &&
+            (projectPath[2] == '\\' || projectPath[2] == '/') &&
+            projectPath[0].isLetter()
+    }
+
+    /**
+     * 将 Windows 路径转换为 WSL 路径
+     *
+     * 例如：
+     * - C:\Users\username\project → /mnt/c/Users/username/project
+     * - D:\Develop\project → /mnt/d/Develop/project
+     *
+     * @param windowsPath Windows 格式的绝对路径
+     * @return WSL 格式的绝对路径，如果不是 Windows 路径则返回原路径
+     */
+    fun windowsPathToWslPath(windowsPath: String): String {
+        if (!isWindowsPath(windowsPath)) {
+            return windowsPath
+        }
+
+        // 提取盘符（C: → c, D: → d）
+        val driveLetter = windowsPath[0].lowercaseChar()
+        val remainingPath = windowsPath.substring(3)  // 跳过 C:\
+
+        // 将 Windows 风格路径分隔符转换为 Unix 风格
+        val wslPath = remainingPath.replace('\\', '/')
+
+        return "/mnt/$driveLetter/$wslPath"
+    }
+
+    /**
      * 获取项目的可能目录名列表（用于历史文件查找）
      *
      * 在 WSL 环境下，可能存在两种历史目录：
      * 1. Windows 路径转换的目录（使用 Windows 版 Claude CLI 创建）
      * 2. WSL 路径转换的目录（使用 WSL 版 Claude CLI 创建）
      *
-     * 返回按优先级排序的目录名列表（优先检查原路径，然后检查转换后的路径）
+     * 支持双向路径转换，确保无论传入哪种格式都能找到对应的历史文件：
+     * - WSL 路径 (/mnt/d/...) → 同时检查 WSL 和 Windows 格式目录
+     * - Windows 路径 (D:\...) → 同时检查 Windows 和 WSL 格式目录
      *
      * @param projectPath 项目的绝对路径
      * @return 可能的目录名列表
@@ -139,12 +180,20 @@ object ProjectPathUtils {
         val primaryName = projectPathToDirectoryName(projectPath)
         val result = mutableListOf(primaryName)
 
-        // 如果是 WSL 路径，添加对应的 Windows 路径目录名
+        // WSL 路径：添加对应的 Windows 路径目录名
         if (isWslPath(projectPath)) {
             val windowsPath = wslPathToWindowsPath(projectPath)
             val windowsDirName = projectPathToDirectoryName(windowsPath)
             if (windowsDirName != primaryName) {
                 result.add(windowsDirName)
+            }
+        }
+        // Windows 路径：添加对应的 WSL 路径目录名（支持编辑重发场景）
+        else if (isWindowsPath(projectPath)) {
+            val wslPath = windowsPathToWslPath(projectPath)
+            val wslDirName = projectPathToDirectoryName(wslPath)
+            if (wslDirName != primaryName) {
+                result.add(wslDirName)
             }
         }
 

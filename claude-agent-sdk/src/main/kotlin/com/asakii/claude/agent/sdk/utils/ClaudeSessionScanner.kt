@@ -29,12 +29,17 @@ object ClaudeSessionScanner {
 
     /**
      * 获取 Claude 配置目录
+     *
+     * 使用 canonicalFile 解析符号链接，支持软链接场景：
+     * - ~/.claude -> /mnt/c/Users/.../.claude
      */
     fun getClaudeDir(): File {
         val homeDir = System.getProperty("user.home")
             ?: System.getenv("USERPROFILE")
             ?: "."
-        return File(homeDir, ".claude")
+        val claudeDir = File(homeDir, ".claude")
+        // 解析符号链接到真实路径
+        return claudeDir.canonicalFile
     }
 
     /**
